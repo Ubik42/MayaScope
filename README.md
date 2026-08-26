@@ -2,7 +2,11 @@
 
 面向 Autodesk Maya Technical Director 的场景理解、诊断、性能分析和安全操作平台。MayaScope 的长期目标是把 DAG、DG、Evaluation、Profiler、引用、插件和运行时状态组织成可查询、可解释、可交互的场景模型，而不是继续堆叠独立脚本。
 
-![MayaScope 中文项目审计指挥台](docs/images/project-queue-guarded-running.png)
+![MayaScope 在真实 Maya 2025 GUI 中运行](docs/images/real-maya-gui.png)
+
+上图来自一个由测试启动并精确持有 PID 的真实 Maya 2025 GUI 进程，不是独立 Qt 仿制窗口：
+`MayaScopeSpectralWorkspace` 的父窗口实际为 `MayaWindow`。探针同时验证重复启动、开发热重载、
+选择回调、动态计时器、菜单卸载和宿主退出；测试完成后只结束自己创建的 Maya，保留启动前已有会话。
 
 当前 Maya 2025 展示版已经走通 Scene Atlas、Root Cause Lens、Scene Clinic、引用/插件/依赖取证、
 签名 Audit、可恢复批量发布队列和安全 ChangePlan 等核心路径；旧 Inspector、Node Assistant 与 Set
@@ -33,6 +37,16 @@ python -m MayaScope.doctor
 ```
 
 显式 Shelf 安装和真实展示场景说明见 [`docs/SHOWCASE.md`](docs/SHOWCASE.md)。
+
+发布前可运行一次独立的真实 GUI 生命周期验证；它使用隔离 `MAYA_APP_DIR`、隐藏窗口和精确 PID
+回收，不附着已有 Maya：
+
+```powershell
+python -m MayaScope.gui_lifecycle `
+  --maya "C:\Program Files\Autodesk\Maya2025\bin\maya.exe" `
+  --output mayascope-gui-lifecycle.json `
+  --screenshot mayascope-real-maya-gui.png
+```
 
 Scene Clinic 也可作为只读 CI / 发布门禁运行。它只启动一个隐藏 Maya 2025 进程，打开场景时
 禁用 script node 执行，并在前后校验源文件 SHA-256：

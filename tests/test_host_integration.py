@@ -6,10 +6,39 @@ import unittest
 from unittest import mock
 
 from MayaScope.host_health import collect_host_health
-from MayaScope import maya_integration
+from MayaScope import launch, maya_integration
+from MayaScope.gui_lifecycle import run_gui_lifecycle
 
 
 class HostIntegrationTests(unittest.TestCase):
+    def test_gui_lifecycle_rejects_non_maya_executable_before_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            fake = root / "python.exe"
+            fake.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "maya.exe"):
+                run_gui_lifecycle(fake, root / "report.json", root / "screen.png")
+
+    def test_development_reload_closes_old_window_before_module_reset(self):
+        events = []
+
+        class FakeModule:
+            @staticmethod
+            def close_tool():
+                events.append("close")
+
+            @staticmethod
+            def show_tool():
+                events.append("show")
+                return "window"
+
+        with mock.patch.object(launch.importlib, "import_module", return_value=FakeModule), mock.patch.object(
+            launch.importlib, "reload", side_effect=lambda module: events.append("reload") or module
+        ), mock.patch.dict(launch.sys.modules, {"MayaScope.ui.workspace": FakeModule}):
+            result = launch.run("workspace", development=True)
+        self.assertEqual(result, "window")
+        self.assertEqual(events[:3], ["close", "reload", "show"])
+
     def test_fast_health_report_covers_showcase_boundary(self):
         class FakeCmds:
             @staticmethod

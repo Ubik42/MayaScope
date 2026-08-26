@@ -36,6 +36,12 @@ def run(tool: str = "workspace", *, development: bool = False) -> Any:
 
     module = importlib.import_module(module_name)
     if development and module_name in sys.modules:
+        # A reload resets module globals. Close the existing host widget first,
+        # otherwise its owning `_WINDOW` reference is erased and callbacks/
+        # timers can survive as an unreachable Maya child window.
+        close_tool = getattr(module, "close_tool", None)
+        if close_tool is not None:
+            close_tool()
         module = importlib.reload(module)
     window = getattr(module, callable_name)()
     if tool == "workspace":

@@ -453,3 +453,25 @@ python -m MayaScope.audit --verify-report dependency-sequence-audit.json
 
 预期识别两个序列依赖：UDIM 有 1001/1002 两个成员；帧序列有 0001/0003，并明确缺少 0002。
 发布包中的 `.exr` 只是路径存在性文本占位，不是可渲染图像。
+
+## 26. 真实 Maya GUI 生命周期验证
+
+`MayaScope.gui_lifecycle` 会在启动前记录全部现有 `maya.exe` PID，然后用隔离 `MAYA_APP_DIR`、
+`-noAutoloadPlugins` 和隐藏窗口创建一个独立 Maya GUI。宿主通过真实 `launch.run("workspace")`
+加载工作区，并验证父窗口确为 `MayaWindow`，不是离屏仿制界面。
+
+```powershell
+python -m MayaScope.gui_lifecycle `
+  --maya "C:\Program Files\Autodesk\Maya2025\bin\maya.exe" `
+  --output mayascope-gui-lifecycle.json `
+  --screenshot mayascope-real-maya-gui.png `
+  --timeout 90
+```
+
+探针依次检查首次绘制与捕获、重复启动只保留一个可见工作区、开发热重载先关闭旧窗口、选择回调
+移除、全部动态计时器停止、菜单卸载和宿主退出。超时时只在 PID、启动 ticks 和可执行路径仍与本次
+创建身份完全一致时终止进程。最终回执同时证明测试进程已经结束、启动前 Maya 身份逐一保持不变。
+
+2026-08-25 的 Maya 2025.3.3 实证由 PID 34284 完成：13.092 秒自行退出，9 个活动计时器归零，
+残留可见工作区为 0；测试前已有 PID 32232 全程保持原身份。结构化回执和真实宿主截图分别为
+`mayascope-gui-lifecycle.json`、`mayascope-real-maya-gui.png`。
