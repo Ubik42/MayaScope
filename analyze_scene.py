@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
 import maya.mel as mel
-from PySide6 import QtWidgets, QtGui, QtCore
+from MayaScope.qt_compat import QtWidgets, QtGui, QtCore
 
 
 class MayaHierarchyInspectorExportMod(QtWidgets.QDialog):
     # 定义需要通过按钮一键控制的数学节点类型
     MATH_NODES = [
-        "aimMatrix", "animCurveUU", "blendColors", "blendlwoAttr",
+        "aimMatrix", "animCurveUU", "blendColors", "blendTwoAttr",
         "clamp", "composeMatrix", "decomposeMatrix", "multDoubleLinear",
         "distanceBetween", "multMatrix", "multiplyDivide"
     ]
@@ -494,8 +494,8 @@ class MayaHierarchyInspectorExportMod(QtWidgets.QDialog):
             else:
                 locked = item.text(2)
                 driven = item.text(3)
-                l_part = f" ??`{locked}`" if locked else ""
-                d_part = f" ??{driven}" if driven else ""
+                l_part = f" 🔒 `{locked}`" if locked else ""
+                d_part = f" ← {driven}" if driven else ""
                 result_text += f"{indent}- {name}{type_part}{l_part}{d_part}\n"
 
             iterator += 1
@@ -513,15 +513,25 @@ class MayaHierarchyInspectorExportMod(QtWidgets.QDialog):
 inspector_mod_win = None
 
 
+def close_tool():
+    global inspector_mod_win
+    if inspector_mod_win is not None:
+        try:
+            inspector_mod_win.close()
+            inspector_mod_win.deleteLater()
+        except RuntimeError:
+            # Qt object may already have been deleted by Maya.
+            pass
+        finally:
+            inspector_mod_win = None
+
+
 def show_tool():
     global inspector_mod_win
-    if inspector_mod_win:
-        try:
-            inspector_mod_win.close(); inspector_mod_win.deleteLater()
-        except:
-            pass
+    close_tool()
     inspector_mod_win = MayaHierarchyInspectorExportMod()
     inspector_mod_win.show()
+    return inspector_mod_win
 
 
 if __name__ == "__main__":

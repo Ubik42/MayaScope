@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
 import maya.mel as mel
-from PySide6 import QtWidgets, QtCore, QtGui
+from MayaScope.qt_compat import QtWidgets, QtCore, QtGui
 import hashlib
 import colorsys
+from collections import deque
 
 
 def get_maya_window():
@@ -134,19 +135,18 @@ class NodeEditorAssistant(QtWidgets.QDialog):
         nodes_to_process = list(cmds.ls(initial_selection, long=True) or [])
         final_nodes = set(nodes_to_process)
         visited = set(nodes_to_process)
-        queue = list(nodes_to_process)
+        queue = deque(nodes_to_process)
 
         while queue:
-            current_node = queue.pop(0)
+            current_node = queue.popleft()
             connections = cmds.listConnections(current_node, source=True, destination=True) or []
 
             for conn in connections:
-                try:
-                    full_conn = cmds.ls(conn, long=True)[0]
-                except:
-                    full_conn = conn
+                matches = cmds.ls(conn, long=True) or []
+                full_conn = matches[0] if matches else conn
 
-                if full_conn in visited: continue
+                if full_conn in visited:
+                    continue
 
                 node_type = cmds.nodeType(full_conn)
                 if node_type in self.MATH_NODE_TYPES:
@@ -287,7 +287,7 @@ class NodeEditorAssistant(QtWidgets.QDialog):
             short = fullname.split("|")[-1]
             try:
                 typ = cmds.nodeType(fullname)
-            except:
+            except (RuntimeError, TypeError):
                 typ = "unknown"
 
             style_class = "transform"
@@ -332,7 +332,8 @@ class NodeEditorAssistant(QtWidgets.QDialog):
             if cmds.objExists(other_node_part):
                 ls_res = cmds.ls(other_node_part, long=True)
                 if ls_res: full_other_node = ls_res[0]
-            if cmds.nodeType(full_other_node) == 'objectSet': continue
+            if cmds.nodeType(full_other_node) == 'objectSet':
+                continue
             short_other_node = full_other_node.split('|')[-1]
             results.append({
                 'my_attr': my_attr,
@@ -386,7 +387,7 @@ class NodeEditorAssistant(QtWidgets.QDialog):
             try:
                 cmds.nodeEditor(pnl + "NodeEditorEd", e=1, addNode=cmds.listConnections(sel, s=up, d=down) or [],
                                 layout=1)
-            except:
+            except (RuntimeError, TypeError):
                 pass
 
     def on_reduce_graph(self, up, down):
@@ -402,7 +403,7 @@ class NodeEditorAssistant(QtWidgets.QDialog):
         if pnl:
             try:
                 cmds.nodeEditor(pnl + "NodeEditorEd", e=1, removeNode=cmds.ls(type='objectSet') or [])
-            except:
+            except (RuntimeError, TypeError):
                 pass
 
     def on_isolate_clicked(self):
@@ -416,7 +417,7 @@ class NodeEditorAssistant(QtWidgets.QDialog):
                 hide = [s for s in shapes if s not in cmds.ls(sel, l=1)]
                 if hide: cmds.nodeEditor(ed, e=1, removeNode=hide)
                 cmds.nodeEditor(ed, e=1, layout=1, frameAll=1)
-            except:
+            except (RuntimeError, TypeError):
                 pass
 
     def copy_to_clipboard(self):
@@ -425,12 +426,29 @@ class NodeEditorAssistant(QtWidgets.QDialog):
         cmds.inViewMessage(amg='<span style=\"color: #00FF00;\">Copied!</span>', pos='midCenter', fade=True)
 
 
-if __name__ == "__main__":
+my_node_assistant_ui = None
+
+
+def close_tool():
     global my_node_assistant_ui
+    if my_node_assistant_ui is None:
+        return
     try:
         my_node_assistant_ui.close()
         my_node_assistant_ui.deleteLater()
-    except:
+    except RuntimeError:
         pass
+    finally:
+        my_node_assistant_ui = None
+
+
+def show_tool():
+    global my_node_assistant_ui
+    close_tool()
     my_node_assistant_ui = NodeEditorAssistant(get_maya_window())
     my_node_assistant_ui.show()
+    return my_node_assistant_ui
+
+
+if __name__ == "__main__":
+    show_tool()

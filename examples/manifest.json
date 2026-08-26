@@ -1,0 +1,64 @@
+{
+  "format": "mayascope.demo-materials",
+  "schema_version": 1,
+  "materials": [
+    {
+      "path": "unknown-plugin-probe.ma",
+      "source": "MayaScope 自行编写",
+      "license": "项目内部开发、测试与作品展示",
+      "maya": "2025",
+      "sha256": "d2c3979fab8d4d1de1b91b832aa5d9f646cc17fde9c902262d49c82dd9fd4fe7",
+      "purpose": "缺失插件 requires、未知节点降级与发布门禁失败路径",
+      "expected": {
+        "unknown_plugin": "studioGhostTools",
+        "version": "4.7",
+        "node_type": "studioGhostSolver",
+        "unknown_node": "ghostSolver1"
+      }
+    },
+    {
+      "path": "reference-health-probe.ma",
+      "source": "MayaScope 自行编写；引用语句由 Maya 2025 生成语义校准",
+      "license": "项目内部开发、测试与作品展示",
+      "maya": "2025",
+      "sha256": "a706568f1bff5526614afcf0fa71bc992337e19cbc30f672e5d65866fc27b4ea",
+      "purpose": "缺失引用源、复制编号和本地节点侵入引用 namespace 失败路径",
+      "expected": {
+        "reference_instances": 2,
+        "canonical_sources": 1,
+        "copy_numbers": [0, 1],
+        "missing_instances": 2,
+        "namespace_intruder": "assetA:localIntruder"
+      }
+    },
+    {
+      "path": "dependency-sequence-probe.ma",
+      "source": "MayaScope 使用 Maya 2025 确定性生成",
+      "license": "项目内部开发、测试与作品展示",
+      "maya": "2025",
+      "sha256": "f0f179e26d28f6d4c6952a688b6721becb0833bbbe89ce5efa46a663ff2253d7",
+      "generator": "generate/dependency_sequence_probe.py",
+      "purpose": "UDIM 成员解析、播放范围帧序列缺口和有界本地目录扫描",
+      "assets": [
+        {"path": "assets/mayascope_hero.1001.exr", "sha256": "1b9c9dd584960868a4fe30c98d7b3d3d11c8bbbc946366a04c97bb85463618d6"},
+        {"path": "assets/mayascope_hero.1002.exr", "sha256": "c6c2c9c3a2c2a9a52356c997354b2daadf37efe164515922ff074e55a8b5496b"},
+        {"path": "assets/mayascope_plate.0001.exr", "sha256": "04b676a12d6fd1c707fcbbc6213645a7d1473ea097dc124ba5d9d6429be19dec"},
+        {"path": "assets/mayascope_plate.0003.exr", "sha256": "e0676e249f03c7471c90e1a9db28947d7d2550664a2d18d9c20e7ebb65a6ee3d"}
+      ],
+      "expected": {
+        "dependencies": 2,
+        "udim_members": 2,
+        "frame_members": 2,
+        "playback_range": [1, 3],
+        "missing_frames": [2]
+      }
+    },
+    {
+      "path": "clinic.team.json",
+      "source": "MayaScope 自行编写",
+      "license": "项目内部开发、测试与作品展示",
+      "sha256": "e053abad80dcb354d874762e1fc8e87c923af968311ee45a1c73e9e6ea3b377e",
+      "purpose": "确定性的中文发布规则与场景制片契约"
+    }
+  ]
+}

@@ -62,7 +62,7 @@ class CodeAnalyzer:
         if sys.version_info >= (3, 9):
             try:
                 return ast.unparse(node)
-            except:
+            except (AttributeError, TypeError, ValueError):
                 pass
 
         # Python 3.8 及以下的回退处理 (简化版)

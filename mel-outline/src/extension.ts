@@ -49,7 +49,7 @@ class MelReferenceProvider implements vscode.ReferenceProvider {
         
         // 1. 获取当前光标选中的单词 (函数名)
         const wordRange = document.getWordRangeAtPosition(position);
-        if (!wordRange) return locations;
+        if (!wordRange) {return locations;}
         const word = document.getText(wordRange);
 
         // 2. 构造全字匹配正则
@@ -82,7 +82,7 @@ class MelReferenceProvider implements vscode.ReferenceProvider {
 class MelDefinitionProvider implements vscode.DefinitionProvider {
     provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Location> {
         const range = document.getWordRangeAtPosition(position);
-        if (!range) return null;
+        if (!range) {return null;}
         const word = document.getText(range);
         for (let i = 0; i < document.lineCount; i++) {
             const line = document.lineAt(i);
@@ -146,13 +146,13 @@ class MelFoldingProvider implements vscode.FoldingRangeProvider {
         const stack: number[] = [];
         for (let i = 0; i < document.lineCount; i++) {
             const text = document.lineAt(i).text;
-            if (text.trim().startsWith('//')) continue;
+            if (text.trim().startsWith('//')) {continue;}
             for (let char of text) {
-                if (char === '{') stack.push(i);
+                if (char === '{') {stack.push(i);}
                 else if (char === '}') {
                     if (stack.length > 0) {
                         const start = stack.pop();
-                        if (start !== undefined && start !== i) ranges.push(new vscode.FoldingRange(start, i));
+                        if (start !== undefined && start !== i) {ranges.push(new vscode.FoldingRange(start, i));}
                     }
                 }
             }
@@ -169,7 +169,7 @@ class MelDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
         const symbols: vscode.DocumentSymbol[] = [];
         for (let i = 0; i < document.lineCount; i++) {
             const line = document.lineAt(i);
-            if (line.isEmptyOrWhitespace) continue;
+            if (line.isEmptyOrWhitespace) {continue;}
             const match = PROC_DEF_REGEX.exec(line.text);
             if (match) {
                 const isGlobal = line.text.includes("global");
@@ -205,7 +205,7 @@ async function exportGlobalProcs() {
         const line = document.lineAt(i);
         const text = line.text;
         
-        if (text.trim().startsWith('//')) continue;
+        if (text.trim().startsWith('//')) {continue;}
 
         const match = EXPORT_SIGNATURE_REGEX.exec(text);
 

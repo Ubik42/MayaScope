@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
+from html import escape
+
 import maya.cmds as cmds
 import maya.mel as mel
-from PySide6 import QtWidgets, QtCore, QtGui
+from MayaScope.qt_compat import QtWidgets, QtCore, QtGui
 
 
 # --- Maya 2025 兼容窗口获取 ---
@@ -121,7 +123,7 @@ class SetManagerTool(QtWidgets.QDialog):
                     return f"#{r:02x}{g:02x}{b:02x}"
                 else:
                     return "#CCCCCC"  # 索引0通常是默认黑/灰
-        except:
+        except (RuntimeError, TypeError, ValueError):
             return "#CCCCCC"
 
     # =========================================================================
@@ -144,7 +146,9 @@ class SetManagerTool(QtWidgets.QDialog):
     def on_create_type_sets(self):
         sel = cmds.ls(sl=True)
         prefix = self.le_type_prefix.text().strip() or "Auto"
-        if not sel: return
+        if not sel:
+            self.status_bar.setText("Select one or more objects.")
+            return
 
         type_map = {}
         for node in sel:
@@ -162,8 +166,9 @@ class SetManagerTool(QtWidgets.QDialog):
     def update_set_info(self):
         """刷新显示，使用 HTML 格式化颜色和布局"""
         try:
-            if not self.isVisible(): return
-        except:
+            if not self.isVisible():
+                return
+        except RuntimeError:
             return
 
         sel = cmds.ls(sl=True)
@@ -190,7 +195,7 @@ class SetManagerTool(QtWidgets.QDialog):
             # 格式: ● ObjectName [Set1] [Set2] ...
 
             line_html = f"<div style='margin-bottom: 5px; white-space: pre;'>"
-            line_html += f"<span style='color: #eee; font-weight:bold;'>{node}</span>"
+            line_html += f"<span style='color: #eee; font-weight:bold;'>{escape(node)}</span>"
 
             if all_sets:
                 line_html += " <span style='color:#666;'>&rarr;</span> "  # 箭头
@@ -200,7 +205,7 @@ class SetManagerTool(QtWidgets.QDialog):
 
                     # 样式: 带有颜色的粗体文字，加一点方框背景感觉
                     # 如果背景太亮，也许字体需要阴影，这里简化为改变文字颜色
-                    line_html += f"&nbsp;<span style='color:{color_hex}; font-weight:bold; background-color:#333; padding:2px 6px; border-radius:4px;'>{s}</span>"
+                    line_html += f"&nbsp;<span style='color:{color_hex}; font-weight:bold; background-color:#333; padding:2px 6px; border-radius:4px;'>{escape(s)}</span>"
             else:
                 line_html += " <span style='color:#555;'><i>(No Sets)</i></span>"
 
@@ -224,16 +229,34 @@ class SetManagerTool(QtWidgets.QDialog):
         if self.script_job_id is not None:
             if cmds.scriptJob(exists=self.script_job_id):
                 cmds.scriptJob(kill=self.script_job_id, force=True)
+            self.script_job_id = None
         super().closeEvent(event)
 
 
-if __name__ == "__main__":
+set_manager_ui = None
+
+
+def close_tool():
     global set_manager_ui
+    if set_manager_ui is None:
+        return
     try:
         set_manager_ui.close()
         set_manager_ui.deleteLater()
-    except:
+    except RuntimeError:
         pass
+    finally:
+        set_manager_ui = None
+
+
+def show_tool():
+    global set_manager_ui
+    close_tool()
 
     set_manager_ui = SetManagerTool(get_maya_window())
     set_manager_ui.show()
+    return set_manager_ui
+
+
+if __name__ == "__main__":
+    show_tool()

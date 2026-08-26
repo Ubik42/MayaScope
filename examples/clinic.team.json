@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "scene_contract": {
+    "allowed_time_units": ["film", "23.976fps"],
+    "required_linear_unit": "cm",
+    "required_angular_unit": "deg",
+    "required_up_axis": "y",
+    "required_color_management": true,
+    "allowed_rendering_spaces": ["ACEScg", "scene-linear Rec.709-sRGB"],
+    "forbidden_plugins": ["legacySolver.mll"],
+    "severity": "ERROR"
+  },
+  "thresholds": {
+    "high-fanout": 96,
+    "namespace-depth": 4
+  },
+  "disabled_rules": [
+    "orphan-utilities"
+  ],
+  "custom_rules": [
+    {
+      "id": "studio-no-script-nodes",
+      "kind": "forbidden_node_types",
+      "title": "发布场景禁止脚本节点",
+      "description": "团队发布规范不允许交付场景携带运行时脚本节点。",
+      "node_types": ["script"],
+      "severity": "ERROR",
+      "category": "pipeline",
+      "confidence": "deterministic",
+      "cost": "instant",
+      "default_enabled": true
+    }
+  ],
+  "profiles": [
+    {
+      "id": "studio-publish",
+      "title": "团队发布门禁",
+      "description": "最终交付阶段的序列化、命名空间、场景设置与可执行节点规范。",
+      "rule_ids": [
+        "unknown-nodes",
+        "dg-cycles",
+        "cross-reference-links",
+        "namespace-depth",
+        "scene-contract",
+        "studio-no-script-nodes"
+      ],
+      "include_expensive": false
+    }
+  ]
+}

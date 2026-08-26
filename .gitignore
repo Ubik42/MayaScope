@@ -8,3 +8,4 @@ mel-outline/node_modules/
 mel-outline/out/
 mel-outline/*.vsix
 mel-outline/.vscode/
+workspace.mel
