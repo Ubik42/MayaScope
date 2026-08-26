@@ -4,7 +4,12 @@
 
 ![MayaScope 中文项目审计指挥台](docs/images/project-queue-guarded-running.png)
 
-当前代码仍处于原型迁移期：现有 Inspector、Node Assistant 和 Set Manager 用于保留需求与验证入口；新架构将围绕 SceneSnapshot、图分析、Scene Health、Performance 和交互式可视化重写。完整路线见 `docs/DEVELOPMENT_PLAN.md`，市场、社区、算法和视觉方向的产品研究见 `docs/RESEARCH_TD_PRODUCT.md`。
+当前 Maya 2025 展示版已经走通 Scene Atlas、Root Cause Lens、Scene Clinic、引用/插件/依赖取证、
+签名 Audit、可恢复批量发布队列和安全 ChangePlan 等核心路径；旧 Inspector、Node Assistant 与 Set
+Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 生产化仍在持续推进，当前可下载包、
+校验清单与版本说明见 [GitHub Releases](https://github.com/Ubik42/MayaScope/releases)。完整路线见
+[`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md)，产品研究见
+[`docs/RESEARCH_TD_PRODUCT.md`](docs/RESEARCH_TD_PRODUCT.md)。
 
 ## 启动新版调查工作区
 
