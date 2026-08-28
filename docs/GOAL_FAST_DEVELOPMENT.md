@@ -463,3 +463,17 @@ Scene Clinic 的 Reference/Animation/Publish 首批规则与批量计划纵向�
 
 整个 `/goal` 继续保持 active；下一阶段提取 UI Foundation（字体、色彩、Qt 枚举、确认对话框），
 再优先拆出 Scene Atlas 视图与控制器，同时保持真实中文视觉和生命周期证据不变。
+
+## 第三十三里程碑进度（完成：UI Foundation 与 Scene Atlas View 边界）
+
+1. 新增 `ui/foundation.py`，集中管理光谱色板、Qt5/6 枚举解析、中文“执行/取消”确认框和离屏中文字体装载。
+2. 新增 `ui/atlas.py`；节点图元、连接图元、环形布局、240 节点语义窗口、搜索、Lens、Delta、Pulse 与反事实光谱覆盖整体迁出主窗口。
+3. Atlas 只依赖不可变 Model、Analysis 和 PySide，不导入 Maya Collector、Callback、QThread 或主窗口；Maya 双向选择编排仍由 Workspace 持有。
+4. 外部选择使用抑制边界写入图谱，不会回声成一次新的用户激活；Atlas 动效只拥有自己的 QTimer，可独立启停并随窗口关闭清理。
+5. 新增 9 项 Foundation/Atlas 回归，覆盖稳定色板、Qt 枚举、节点与边物化、异常节点预算优先、选择不回声、定时器和源码依赖边界。
+6. `ui/workspace.py` 从 5414 行降到 4835 行；这只代表 View 和基础层完成迁移，Atlas 控制器及其他业务面仍在主窗口。
+7. 普通 Python 总计 196 项通过（19 项宿主限定跳过）。
+8. 真实 Maya 2025 PID 35408 在 19.815 秒内通过首次启动、重复启动、热重载、中文绘制和关闭；9 个活动定时器归零。
+
+整个 `/goal` 继续保持 active；下一阶段优先建立 Atlas/Application Coordinator，把捕获、选择、
+Clinic、Lens 与视觉渲染之间的控制流从主窗口迁出，再拆 Clinic View；不重写已经验证的光谱视觉。

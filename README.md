@@ -62,6 +62,10 @@ Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 �
 [`docs/RESEARCH_TD_PRODUCT.md`](docs/RESEARCH_TD_PRODUCT.md)，当前分层与渐进拆分合同见
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
+当前生产界面仍是原生 Maya 2025 + PySide6：`ui/foundation.py` 统一中文字体、光谱色板和基础交互，
+`ui/atlas.py` 独立负责真实 Scene Atlas 的节点、连接、选择与动态证据覆盖；主窗口继续渐进迁移，
+没有为了“重构”另画一套截图专用前端。
+
 ## 启动新版调查工作区
 
 当前展示版以 **Maya 2025 + PySide6** 为唯一宿主基线。把 `D:\\3D\\_tools` 加入 Maya 的 Python 路径，然后执行：

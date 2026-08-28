@@ -2,8 +2,9 @@
 
 MayaScope 采用“宿主无关调查内核 + 薄 Maya 边界 + 状态驱动 PySide 视图”的目标架构。当前实现已经
 拥有较清晰的 Model、Analysis、Collector、Action、Runner 和 Storage，但历史快速开发让
-`ui/workspace.py` 同时承担视图、呈现状态、后台任务和业务编排。本文件记录当前真实边界与渐进迁移
-顺序；它不是已经完成重构的声明。
+历史版本的 `ui/workspace.py` 同时承担视图、呈现状态、后台任务和业务编排。当前已经抽出
+Presentation State、后台 Worker、UI Foundation 与 Scene Atlas View，但主窗口仍承担多个业务工作区
+的装配和控制器逻辑。本文件记录当前真实边界与渐进迁移顺序；它不是已经完成重构的声明。
 
 ## 依赖方向
 
@@ -82,7 +83,9 @@ Clinic、Crash Bisect 与项目审计队列的 QObject Worker 已移到 `ui/work
 
 MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
-- Scene Atlas 使用 `QGraphicsView/QGraphicsScene` 管理可交互节点与连接；
+- `ui/foundation.py` 统一提供光谱颜色、Qt5/6 枚举解析、中文确认框与离屏中文字体装载；
+- `ui/atlas.py` 使用 `QGraphicsView/QGraphicsScene` 管理可交互节点、连接、语义渲染窗口、
+  Lens/Delta/Pulse/反事实覆盖和选择回声抑制；它不导入 Maya Collector 或主窗口；
 - 性能、Runtime、回归、项目门禁和 Failure Prism 使用 QWidget + QPainter；
 - QTimer 只驱动绘制 phase、去抖和分片捕获；
 - 耗时纯数据分析使用 QThread Worker；
@@ -91,21 +94,25 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 后续拆分顺序
 
-1. 将字体、色彩、枚举兼容和确认对话框提取到 `ui/foundation`；
-2. 按 Atlas、Clinic、Lens、Profiler、Runtime、Project Gate、Regression、Bisect 拆分视图模块；
+1. 继续把 Atlas 控制器从主窗口迁到显式 Coordinator；当前只完成 View 边界；
+2. 按 Clinic、Lens、Profiler、Runtime、Project Gate、Regression、Bisect 拆分视图模块；
 3. 建立 Application Coordinator，统一捕获、诊所、性能和项目任务的状态机；
-4. 逐步移除 `_presentation_field` 兼容属性，让视图通过显式 render/state transition 工作；
-5. 为每个工作区保留普通 Python 状态测试、离屏中文视觉测试与真实 Maya 生命周期测试。
+4. 将当前主窗口内的完整 QSS 提取为可版本化主题表面，并保留真实截图差异验收；
+5. 逐步移除 `_presentation_field` 兼容属性，让视图通过显式 render/state transition 工作；
+6. 为每个工作区保留普通 Python 状态测试、离屏中文视觉测试与真实 Maya 生命周期测试。
 
 每一步必须保持真实入口、截图、选择联动、取消、热重载和关闭清理通过。禁止一次性搬动全部类、
 重新实现已经验证的 QPainter/QGraphicsView，或用“代码分文件了”冒充职责已经分离。
 
 ## 当前验证证据
 
-- 普通 Python：187 项通过，19 项仅宿主环境测试按预期跳过；
+- 普通 Python：196 项通过，19 项仅宿主环境测试按预期跳过；
 - Presentation State：新场景代际失效、选择互斥、Lens、Profiler、Runtime、Delta 与字段拼写保护；
-- 真实 Maya 2025：PID 53308，19.116 秒自行退出；
+- UI Foundation：稳定命名色板、Qt6 分组枚举和拼写拒绝；
+- Scene Atlas：节点/边物化、240 节点预算、异常节点优先、选择不回声和动效定时器边界；
+- 真实 Maya 2025：PID 35408，19.815 秒自行退出；
 - 生命周期：首次启动、重复启动、开发热重载、唯一可见工作区、选择回调和菜单卸载通过；
-- 清理：10 个活动计时器归零，残留可见工作区为 0。
+- 清理：9 个活动计时器归零，残留可见工作区为 0。
 
-该证据只证明第一阶段迁移没有改变已覆盖行为，不证明 `ui/workspace.py` 已完成拆分。
+`ui/workspace.py` 已从 5414 行降到 4835 行。该证据证明 Foundation 与 Atlas View 迁移没有改变
+已覆盖行为，不证明主窗口控制器或其余业务工作区已经完成拆分。
