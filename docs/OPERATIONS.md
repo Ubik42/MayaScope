@@ -477,6 +477,11 @@ modified 状态前后一致。默认场景不执行这些额外操作，干净�
 截图，再推进一个安全分片，确认控制器释放 Maya 回调守卫、运行时/捕获/诊所入口恢复、旧证据仍在，
 且场景 modified 状态没有变化。该场景也会继续完成重复启动、开发热重载、计时器归零和菜单卸载。
 
+`--scenario capture-cancel` 覆盖 SceneSnapshot 分片采集本身。探针先保留一份有效旧快照，再启动新
+会话并冻结“正在安全取消场景捕获”状态；下一安全分片后验证部分快照未提交、旧快照对象未替换、
+捕获/Runtime/诊所/性能入口恢复、Maya modified 状态不变。1480px 与 800px 截图分别验收完整元数据
+和紧凑动态状态带。
+
 `--scenario project-gate` 会调用 `examples/generate/project_gate_fixture.py` 现场生成三个 Maya ASCII
 2025 场景和三份签名审计回执，使用生产 `verify_project_audit` 复核双层签名后，显示两项通过、一项
 阻断的项目发布列车并聚焦缓存缺失镜头。该场景同时验证宽屏与 800px 停靠时的中文裁切和布局。
@@ -523,8 +528,8 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
 ```
 
 涉及 Profiler/Runtime 视图或状态恢复的候选包使用 `--scenario instruments`；涉及 Runtime 会话、
-取消和控件恢复时使用 `--scenario runtime-cancel`；涉及根因呈现、动态布局或候选交互时使用
-`--scenario lens`。该参数会原样传给从
+取消和控件恢复时使用 `--scenario runtime-cancel`；涉及场景快照会话与旧快照保护时使用
+`--scenario capture-cancel`；涉及根因呈现、动态布局或候选交互时使用 `--scenario lens`。该参数会原样传给从
 临时 Module 启动的真实 GUI 探针，因此能证明仪器闭环来自 ZIP 解压副本，而不是开发源码。可同时
 传入 `--width 800 --height 900` 验证窄停靠。
 

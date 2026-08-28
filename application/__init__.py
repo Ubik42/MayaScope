@@ -20,6 +20,11 @@ from .runtime_capture import (
     RuntimeCaptureEvent,
     RuntimeCaptureStateError,
 )
+from .scene_capture import (
+    SceneCaptureController,
+    SceneCaptureEvent,
+    SceneCaptureStateError,
+)
 
 __all__ = [
     "AtlasClearIntent",
@@ -37,5 +42,8 @@ __all__ = [
     "RuntimeCaptureController",
     "RuntimeCaptureEvent",
     "RuntimeCaptureStateError",
+    "SceneCaptureController",
+    "SceneCaptureEvent",
+    "SceneCaptureStateError",
     "resolve_host_selection",
 ]

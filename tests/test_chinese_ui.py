@@ -24,6 +24,7 @@ class ChineseInterfaceTests(unittest.TestCase):
                 "runtime.py",
                 "project_gate.py",
                 "lens.py",
+                "capture.py",
             )
         )
         required = (

@@ -592,3 +592,18 @@ Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordin
 
 整个 `/goal` 继续保持 active；下一阶段优先把 Runtime/Profiler 采集编排进一步移出 Workspace，或对
 Atlas 大图增量布局和渲染预算做下一条真实制作纵切；不继续扩张展示版功能面。
+
+## 第四十一里程碑进度（完成：Scene Capture 会话控制器与动态安全边界）
+
+1. 新增宿主无关 `application.scene_capture`，以不可变事件统一场景捕获的启动、进度、取消、代次漂移、失败、复用和完成，不导入 Maya、Qt、Collector 或 UI。
+2. 控制器独占采集会话、上次快照身份、分片预算与必需后置验证；取消幂等，必需验证期间拒绝取消，任何终态都确定性释放会话。
+3. 场景代次在分片前变化、结果身份错配、旧快照漂移和 Collector 异常都不会提交半成品；显式 `abort` 供关闭路径同步清理。
+4. Workspace 不再手动持有 `_capture_session` / `_capture_previous_snapshot`，捕获、队列、Runtime、诊所和性能入口由同一语义状态锁定与恢复。
+5. 新增独立 `SceneCaptureStrip`：七阶段光谱扫描、动态探针、橙色取消态、中文安全边界、reduced-motion 与 800px 紧凑模式；平时自动隐藏，不占用调查空间。
+6. GUI 生命周期新增 `capture-cancel`：真实 Maya 中保留旧快照、发起并冻结取消态、推进下一安全分片，再验证部分快照未提交、旧对象保留、四组入口恢复和 modified 状态不变。
+7. 1480 × 900 真机 PID 54944 与 800 × 900 真机 PID 38488 均通过；两轮结束后启动前已有 Maya PID 58104 保持同一身份。
+8. 新增控制器、视图、中文界面和真实生命周期回归；普通 Python 267 项通过（19 项宿主限定跳过），同一套 267 项在 Maya 2025 `mayapy` 全部通过。
+9. `application/scene_capture.py` 257 行，`ui/capture.py` 186 行，`ui/workspace.py` 3441 行；这一阶段只收拢捕获编排和状态呈现，不重写已验证的 Collector。
+10. 候选 ZIP 的隔离 Module 回放 PID 47012 只从临时解压包加载，完成同一 `capture-cancel` 场景、可恢复卸载、备份恢复、最终卸载和临时目录清理；回放启动时没有可附着的既有 Maya。
+
+整个 `/goal` 继续保持 active；下一阶段优先用真实大场景测量 Atlas 增量布局与绘制预算，再决定布局内核或视口虚拟化的最小纵向切片，不扩大展示版功能面。

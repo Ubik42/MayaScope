@@ -136,6 +136,12 @@ python -m MayaScope.gui_lifecycle `
   --scenario runtime-cancel --width 1480 --height 900
 ```
 
+场景快照本身使用 `--scenario capture-cancel`。它会把新的“场景探针”动态状态带冻结在取消边界，
+再确认部分快照没有进入调查、旧快照对象仍被保留、捕获/Runtime/诊所/性能入口全部恢复。此场景
+同样支持 `--width 800 --height 900`，用于验收中文紧凑布局。
+
+![真实 Maya 场景捕获取消](docs/images/scene-capture-cancel.png)
+
 项目门禁改动可使用 `--scenario project-gate`。它会现场生成三镜头签名包、用生产 verifier 复核，
 再在真实 Maya 中聚焦唯一阻断镜头并截图；整个过程只读，不改变当前 Maya 场景。
 
@@ -155,8 +161,8 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
 
 这项验证专门防止“发布包看似安装成功，真实 Maya 实际仍从开发源码目录导入”的假通过。
 发布候选若修改了 Profiler/Runtime，可追加 `--scenario instruments`，让临时安装副本真实完成采集、
-仪器截图和清除恢复；修改 Runtime 会话控制时使用 `--scenario runtime-cancel`。`--width 800
---height 900` 可把同一闭环作为窄停靠验收。
+仪器截图和清除恢复；修改 Runtime 会话控制时使用 `--scenario runtime-cancel`，修改场景快照会话时
+使用 `--scenario capture-cancel`。`--width 800 --height 900` 可把同一闭环作为窄停靠验收。
 
 Scene Clinic 也可作为只读 CI / 发布门禁运行。它只启动一个隐藏 Maya 2025 进程，打开场景时
 禁用 script node 执行，并在前后校验源文件 SHA-256：

@@ -56,8 +56,11 @@ Coordinator 现同时接收 Profiler、Runtime 与 Counterfactual，拒绝旧场
 第六阶段已把真实 Profiler 地平线和 Runtime 星图分别迁入 `ui/profiler.py`、`ui/runtime.py`；
 Coordinator 新增统一覆盖恢复规则和 Profiler/Runtime 关闭用例。“清除采样”会让实测 Lens 与
 Counterfactual 同步失效，但保留同代 Runtime/Delta，并在真实 Maya 中证明 modified 状态不变。
-`ui/workspace.py` 当前 3937 行；下一项架构重点是 Runtime 分片采集会话与控件锁定/取消恢复，而不是
-继续扩大展示版功能面。
+Runtime 分片控制器落地后，SceneSnapshot 捕获也已迁入宿主无关的 `SceneCaptureController`：它统一
+管理源快照身份、场景代次、必需后置验证、取消和终态清理，并向 Workspace 只输出不可变语义事件。
+新的 `ui/capture.py` 独立拥有七阶段场景探针、动态安全边界和 800px 紧凑布局。`ui/workspace.py`
+当前 3441 行；下一项架构重点是 Atlas 大图增量布局/渲染预算，或继续抽离高风险应用状态，而不是
+扩大展示版功能面。
 
 当前宿主策略：展示版只以 Maya 2025 + PySide6 为开发和验收基线。先把一个版本的
 视觉完成度、动态交互和可靠性做深，不并行维护 Maya 2024/PySide2；核心数据与算法

@@ -72,7 +72,7 @@ def schedule() -> None:
                 window is not None
                 and window.isVisible()
                 and window._snapshot is not None
-                and window._capture_session is None
+                and not window._scene_capture.active
                 and window._clinic_thread is None
             )
 
@@ -113,6 +113,8 @@ def schedule() -> None:
                 self.prepare_instrument_scenario()
             elif self.scenario == "runtime-cancel":
                 self.prepare_runtime_cancel_scenario()
+            elif self.scenario == "capture-cancel":
+                self.prepare_capture_cancel_scenario()
             elif self.scenario == "project-gate":
                 self.prepare_project_gate_scenario()
             elif self.scenario == "lens":
@@ -144,6 +146,8 @@ def schedule() -> None:
                 self.verify_instrument_clear()
             elif self.scenario == "runtime-cancel":
                 self.verify_runtime_cancel()
+            elif self.scenario == "capture-cancel":
+                self.verify_capture_cancel()
             old = self.first
             self.second = self.launch.run("workspace")
             self.second.resize(*self.window_size)
@@ -284,6 +288,58 @@ def schedule() -> None:
                 "诊所入口已恢复": self.first.clinic_array.isEnabled(),
                 "上次证据未被覆盖": self.first._runtime_snapshot is self.runtime_before_cancel,
                 "Maya 修改状态未改变": modified_after == self.runtime_modified_before_cancel,
+            }
+
+        def prepare_capture_cancel_scenario(self):
+            self.capture_snapshot_before_cancel = self.first._snapshot
+            self.capture_modified_before_cancel = bool(
+                cmds.file(query=True, modified=True)
+            )
+            self.first.capture()
+            self.first._capture_timer.stop()
+            self.first.capture()
+            QtWidgets.QApplication.processEvents()
+            self.checks["场景捕获取消交互"] = {
+                "通过": bool(
+                    self.first._scene_capture.cancelling
+                    and not self.first.capture_button.isEnabled()
+                    and self.first.capture_button.text() == "正在取消…"
+                    and not self.first.runtime_button.isEnabled()
+                    and not self.first.bisect_button.isEnabled()
+                    and not self.first.clinic_array.isEnabled()
+                    and not self.first.pulse.isEnabled()
+                ),
+                "控制器正在取消": self.first._scene_capture.cancelling,
+                "取消按钮已锁定": not self.first.capture_button.isEnabled(),
+                "按钮文案": self.first.capture_button.text(),
+                "运行时入口已锁定": not self.first.runtime_button.isEnabled(),
+                "诊所入口已锁定": not self.first.clinic_array.isEnabled(),
+                "性能入口已锁定": not self.first.pulse.isEnabled(),
+            }
+
+        def verify_capture_cancel(self):
+            self.first._advance_capture()
+            QtWidgets.QApplication.processEvents()
+            modified_after = bool(cmds.file(query=True, modified=True))
+            self.checks["场景捕获取消恢复"] = {
+                "通过": bool(
+                    not self.first._scene_capture.active
+                    and self.first._snapshot is self.capture_snapshot_before_cancel
+                    and self.first.capture_button.isEnabled()
+                    and self.first.capture_button.text() == "捕获场景"
+                    and self.first.runtime_button.isEnabled()
+                    and self.first.bisect_button.isEnabled()
+                    and self.first.clinic_array.isEnabled()
+                    and self.first.pulse.isEnabled()
+                    and modified_after == self.capture_modified_before_cancel
+                ),
+                "采集会话已释放": not self.first._scene_capture.active,
+                "上次快照仍保留": self.first._snapshot is self.capture_snapshot_before_cancel,
+                "捕获入口已恢复": self.first.capture_button.isEnabled(),
+                "运行时入口已恢复": self.first.runtime_button.isEnabled(),
+                "诊所入口已恢复": self.first.clinic_array.isEnabled(),
+                "性能入口已恢复": self.first.pulse.isEnabled(),
+                "Maya 修改状态未改变": modified_after == self.capture_modified_before_cancel,
             }
 
         def prepare_project_gate_scenario(self):

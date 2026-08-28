@@ -206,7 +206,7 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument(
         "--scenario",
-        choices=("default", "instruments", "runtime-cancel", "project-gate", "lens"),
+        choices=("default", "instruments", "runtime-cancel", "capture-cancel", "project-gate", "lens"),
         default="default",
     )
     parser.add_argument("--width", type=int, default=1480)

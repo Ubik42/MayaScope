@@ -20,6 +20,9 @@ from ..application import (
     InvestigationTransition,
     RuntimeCaptureController,
     RuntimeCaptureEvent,
+    SceneCaptureController,
+    SceneCaptureEvent,
+    SceneCaptureStateError,
     resolve_host_selection,
 )
 from ..analysis.delta import SceneDelta, compare_snapshots
@@ -66,6 +69,7 @@ from ..runner import (
 from ..storage import ExperimentStore, SnapshotStore
 from .atlas import MAX_RENDER_NODES, SpectralAtlasView
 from .clinic import SceneClinicView
+from .capture import SceneCaptureStrip
 from .foundation import (
     COLORS,
     confirm_action as _confirm_action,
@@ -805,6 +809,11 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             cancelled_errors=(RuntimeCaptureCancelled,),
             stale_errors=(RuntimeChangedDuringCapture,),
         )
+        self._scene_capture = SceneCaptureController(
+            MayaSceneCaptureSession,
+            cancelled_errors=(CaptureCancelled,),
+            stale_errors=(SceneChangedDuringCapture,),
+        )
         self._selection_bridge = None
         self._host_identity_index = {}
         self._pending_host_selection: Tuple[str, ...] = ()
@@ -822,8 +831,6 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._bisect_worker = None
         self._bisect_journal_path = None
         self._close_after_bisect = False
-        self._capture_session = None
-        self._capture_previous_snapshot = None
         self._capture_after = None
         self._capture_required = False
         self._capture_timer = QtCore.QTimer(self)
@@ -942,6 +949,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         top_layout.addWidget(self.bisect_button)
         top_layout.addWidget(self.capture_button)
         outer.addWidget(top)
+
+        self.capture_strip = SceneCaptureStrip()
+        outer.addWidget(self.capture_strip)
 
         self.lens_bar = LensControlBar()
         self.lens_bar.directionChanged.connect(self._set_lens_direction)
@@ -1062,6 +1072,13 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             #BisectButton { color: #FF9A6D; border-color: #8A3C22; background: #21100B; }
             #BisectButton:hover { color: #09060F; background: #FF6A2A; border-color: #FF8D59; }
             #BisectButton:disabled { color: #705044; background: #160D0A; border-color: #3C251D; }
+            #CaptureStrip { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #071A20, stop:0.42 #150C22, stop:0.78 #101708, stop:1 #21100B); border-top: 1px solid #28657A; border-bottom: 1px solid #5A356F; }
+            #CaptureMark { color: #48D7FF; font-size: 11px; font-weight: 900; letter-spacing: 1px; }
+            #CaptureHeading { color: #F4F0FF; font-size: 12px; font-weight: 900; }
+            #CaptureMeta, #CaptureBoundary { color: #8E899C; font-size: 8px; font-weight: 700; }
+            #CaptureProgress { color: #C8FF3D; font-size: 10px; font-weight: 900; letter-spacing: 1px; padding: 5px 8px; border: 1px solid #577227; border-radius: 6px; background: #10190B; }
+            #CaptureProgress[state="required"] { color: #48D7FF; border-color: #28586A; background: #0B171C; }
+            #CaptureProgress[state="cancelling"] { color: #FF9A6D; border-color: #8A3C22; background: #21100B; }
             #MotionButton:focus, #CandidateCard:focus, #IssueCard:focus { border: 2px solid #C8FF3D; }
             #LensBar { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #221137, stop:0.5 #120D1D, stop:1 #10180C); border-bottom: 1px solid #46305E; }
             #LensMark { color: #C8FF3D; font-size: 11px; font-weight: 900; letter-spacing: 1px; }
@@ -1209,6 +1226,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.runtime_button.setVisible(not compact)
         self.lens_bar.set_compact(compact)
         self.search.setMaximumWidth(175 if compact else 310)
+        self.capture_strip.set_compact(compact)
         self.clinic_view.set_compact(compact)
         super().resizeEvent(event)
         if self._lens_report:
@@ -1246,6 +1264,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.runtime_constellation.set_motion_enabled(enabled)
         self.bisect_prism.set_motion_enabled(enabled)
         self.host_beacon.set_motion_enabled(enabled)
+        self.capture_strip.set_motion_enabled(enabled)
 
     def _apply_investigation_transition(
         self, transition: InvestigationTransition
@@ -1395,7 +1414,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if not self._snapshot:
             self.status.setText("  运行时采集等待中  ·  请先捕获场景")
             return
-        if self._capture_session is not None or (
+        if self._scene_capture.active or (
             self._clinic_thread and self._clinic_thread.isRunning()
         ) or (self._bisect_thread and self._bisect_thread.isRunning()) or (
             self._project_queue_thread and self._project_queue_thread.isRunning()
@@ -1525,7 +1544,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.delta_strip.set_delta(delta)
 
     def _auto_capture(self):
-        if self._snapshot is None and self._capture_session is None:
+        if self._snapshot is None and not self._scene_capture.active:
             self.capture()
 
     def capture(self, after=None):
@@ -1533,87 +1552,108 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             if self._clinic_job and self._clinic_job[0] == "capture" and not self._capture_required:
                 self._cancel_clinic_analysis()
             return
-        if self._capture_session is not None:
+        if self._scene_capture.active:
             if after is None:
-                self._capture_session.cancel()
-                self.capture_button.setEnabled(False)
-                self.capture_button.setText("正在取消…")
-                self.status.setText("  正在取消场景捕获  ·  将在下一个安全分片停止")
+                try:
+                    event = self._scene_capture.request_cancel()
+                except SceneCaptureStateError as exc:
+                    self.status.setText("  场景复检不可取消  ·  %s" % exc)
+                    return
+                if event.kind == "failed":
+                    self._capture_failed(event.error, "场景捕获取消失败")
+                else:
+                    self._render_scene_capture_event(event)
             return
         try:
-            session = MayaSceneCaptureSession(previous_snapshot=self._snapshot)
+            event = self._scene_capture.start(
+                self._snapshot, required=after is not None
+            )
         except Exception as exc:
             self.status.setText("  场景探针失败  ·  %s" % exc)
             QtWidgets.QMessageBox.critical(self, "MayaScope 场景捕获失败", str(exc))
             return
-        self._capture_previous_snapshot = self._snapshot
         self._capture_after = after
         self._capture_required = after is not None
-        self._capture_session = session
-        self.bisect_button.setEnabled(False)
-        self.runtime_button.setEnabled(False)
-        self.clinic_array.setEnabled(False)
-        self.pulse.setEnabled(False)
-        self.capture_button.setEnabled(not self._capture_required)
-        self.capture_button.setText(
-            "正在验证…" if self._capture_required else "取消捕获"
-        )
-        self.status.setText("  场景捕获中  ·  正在获取稳定节点身份")
+        self._render_scene_capture_event(event)
         log_event("capture.started", context={"has_previous": self._snapshot is not None})
         self._capture_timer.start()
 
+    def _render_scene_capture_event(self, event: SceneCaptureEvent):
+        if event.kind == "started":
+            self.capture_strip.start(required=event.required)
+            self.bisect_button.setEnabled(False)
+            self.runtime_button.setEnabled(False)
+            self.clinic_array.setEnabled(False)
+            self.pulse.setEnabled(False)
+            self.capture_button.setEnabled(not event.required)
+            self.capture_button.setText(
+                "正在验证…" if event.required else "取消捕获"
+            )
+            self.status.setText("  场景捕获中  ·  正在获取稳定节点身份")
+            return
+        if event.kind == "cancelling":
+            self.capture_strip.show_cancelling()
+            self.capture_button.setEnabled(False)
+            self.capture_button.setText("正在取消…")
+            self.status.setText(
+                "  正在取消场景捕获  ·  将在下一个安全分片停止"
+            )
+            return
+        if event.kind == "progress":
+            self.capture_strip.update_progress(
+                event.message, event.completed, event.total
+            )
+            count = (
+                "%s/%s" % (event.completed, event.total)
+                if event.total
+                else "已发现 %s 项" % event.completed
+            )
+            self.status.setText(
+                "  场景捕获中  ·  %s  ·  %s" % (event.message, count)
+            )
+
+    def _restore_scene_capture_controls(self):
+        self._capture_timer.stop()
+        self.capture_strip.clear()
+        self.capture_button.setEnabled(True)
+        self.capture_button.setText("捕获场景")
+        self.bisect_button.setEnabled(True)
+        self.runtime_button.setEnabled(self._snapshot is not None)
+        self.clinic_array.setEnabled(True)
+        self.pulse.setEnabled(True)
+
     def _advance_capture(self):
-        session = self._capture_session
-        if session is None:
+        if not self._scene_capture.active:
             self._capture_timer.stop()
             return
-        try:
-            progress = session.step(max_items=192, max_milliseconds=7.0)
-        except CaptureCancelled:
-            self._capture_timer.stop()
-            self._capture_session = None
-            self._capture_previous_snapshot = None
+        event = self._scene_capture.advance(self._snapshot)
+        if not event.terminal:
+            self._render_scene_capture_event(event)
+            return
+        if event.kind == "cancelled":
             self._capture_after = None
             self._capture_required = False
-            self.capture_button.setEnabled(True)
-            self.capture_button.setText("捕获场景")
-            self.bisect_button.setEnabled(True)
-            self.runtime_button.setEnabled(self._snapshot is not None)
-            self.clinic_array.setEnabled(True)
-            self.pulse.setEnabled(True)
+            self._restore_scene_capture_controls()
             self.status.setText("  场景捕获已取消  ·  已保留上次快照")
             log_event("capture.cancelled")
             return
-        except SceneChangedDuringCapture as exc:
-            self._capture_failed(exc, "捕获结果已失效")
+        if event.kind == "stale":
+            self._capture_failed(event.error, "捕获结果已失效")
             return
-        except Exception as exc:
-            self._capture_failed(exc, "场景捕获失败")
+        if event.kind == "failed":
+            self._capture_failed(event.error, "场景捕获失败")
             return
-
-        if not session.done:
-            count = (
-                "%s/%s" % (progress.completed, progress.total)
-                if progress.total else
-                "已发现 %s 项" % progress.completed
-            )
-            self.status.setText(
-                "  场景捕获中  ·  %s  ·  %s" % (progress.message, count)
-            )
-            return
-
         self._capture_timer.stop()
-        snapshot = session.result
-        previous_snapshot = self._capture_previous_snapshot
+        snapshot = event.snapshot
+        previous_snapshot = event.previous_snapshot
+        reuse = event.reuse
         aliased_indexes = (
             alias_graph_indexes(previous_snapshot, snapshot)
-            if previous_snapshot is not None and session.reuse.topology_unchanged
+            if previous_snapshot is not None and reuse.topology_unchanged
             else 0
         )
         callback = self._capture_after
         required = self._capture_required
-        self._capture_session = None
-        self._capture_previous_snapshot = None
         self._capture_after = None
         self._start_clinic_analysis(
             snapshot,
@@ -1628,26 +1668,18 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 context={
                     "previous_snapshot_id": previous_snapshot.snapshot_id,
                     "snapshot_id": snapshot.snapshot_id,
-                    "reused_nodes": session.reuse.reused_nodes,
-                    "reused_edges": session.reuse.reused_edges,
-                    "reused_references": session.reuse.reused_references,
-                    "topology_unchanged": session.reuse.topology_unchanged,
+                    "reused_nodes": reuse.reused_nodes,
+                    "reused_edges": reuse.reused_edges,
+                    "reused_references": reuse.reused_references,
+                    "topology_unchanged": reuse.topology_unchanged,
                     "aliased_indexes": aliased_indexes,
                 },
             )
 
     def _capture_failed(self, exc, label: str):
-        self._capture_timer.stop()
-        self._capture_session = None
-        self._capture_previous_snapshot = None
         self._capture_after = None
         self._capture_required = False
-        self.capture_button.setEnabled(True)
-        self.capture_button.setText("捕获场景")
-        self.bisect_button.setEnabled(True)
-        self.runtime_button.setEnabled(self._snapshot is not None)
-        self.clinic_array.setEnabled(True)
-        self.pulse.setEnabled(True)
+        self._restore_scene_capture_controls()
         self.status.setText("  %s  ·  %s" % (label, exc))
         log_event("capture.failed", str(exc), level=40, context={"label": label})
         QtWidgets.QMessageBox.critical(self, "MayaScope 场景捕获已停止", str(exc))
@@ -2208,7 +2240,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         raise RuntimeError("未找到 Maya 2025 mayapy.exe")
 
     def _start_bisect(self):
-        if self._capture_session is not None or (
+        if self._scene_capture.active or (
             self._clinic_thread and self._clinic_thread.isRunning()
         ):
             self.status.setText("  故障二分等待中  ·  场景捕获或诊所分析仍在执行")
@@ -2479,11 +2511,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if self._runtime_capture.active:
             self._runtime_timer.stop()
             self._runtime_capture.abort()
-        if self._capture_session is not None:
+        if self._scene_capture.active:
             self._capture_timer.stop()
-            self._capture_session.cancel()
-            self._capture_session = None
-            self._capture_previous_snapshot = None
+            self._scene_capture.abort()
             self._capture_after = None
             self._capture_required = False
         if self._clinic_thread and self._clinic_thread.isRunning():
@@ -3066,7 +3096,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if (
             (self._clinic_thread and self._clinic_thread.isRunning())
             or (self._bisect_thread and self._bisect_thread.isRunning())
-            or self._capture_session is not None
+            or self._scene_capture.active
             or self._runtime_capture.active
         ):
             self.status.setText("  批量审计等待中  ·  请先完成当前场景任务")

@@ -71,6 +71,20 @@ heroRoot → globalMatrix → spaceDecompose → faceDriver → heroFace_CTRL
 真实宿主回归使用 `--scenario lens`。它只操作测试器创建并精确持有的 Maya，现场生成夹具、保存后
 捕获、执行追踪、截图，再验证重复启动、热重载、回调释放和退出；启动前已有 Maya 不会被附着或关闭。
 
+## 场景捕获安全取消演示
+
+点击“捕获场景”后再次点击即可请求取消。顶部“场景探针”不是装饰进度条：七段光谱对应真实分片
+阶段，取消态会转为橙色并明确提示“等待安全边界”。控制器只会在分片边界退出，未完成的节点、边和
+引用不会拼成半张快照；上次有效快照继续支撑 Atlas 与调查证据。捕获期间 Runtime、诊所和性能入口
+统一锁定，释放会话后一次恢复。
+
+![场景捕获取消宽屏](images/scene-capture-cancel.png)
+
+![场景捕获取消 800px 紧凑布局](images/scene-capture-cancel-narrow.png)
+
+真实宿主回归使用 `--scenario capture-cancel`。回执同时核对旧快照对象、Maya modified 状态、控制器
+释放、入口恢复、重复启动、热重载和全部计时器清理；测试器只回收自己精确创建的 Maya 进程。
+
 ## 场景制片契约演示
 
 将 `MAYASCOPE_CLINIC_CONFIG` 指向 `examples/clinic.team.json` 后启动。诊所顶部的“制片信号”带会
