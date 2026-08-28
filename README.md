@@ -1,17 +1,40 @@
 # MayaScope
 
-**给复杂 Maya 场景做 CT、破案和安全手术的 TD 调查工作台。**
+> **面向 Maya TD 的中文场景调查平台：给复杂场景做 CT、破案和安全手术。**
+
+`Windows` · `Maya 2025` · `PySide6` · `Python` · `Maya API` · `中文生产界面`
+
+[下载展示版](https://github.com/Ubik42/MayaScope/releases/tag/v3.0.0-showcase) ·
+[5 分钟演示路线](docs/SHOWCASE.md) ·
+[完整使用与恢复](docs/OPERATIONS.md) ·
+[架构说明](docs/ARCHITECTURE.md)
+
+![MayaScope 在真实 Maya 2025 GUI 中运行](docs/images/real-maya-gui.png)
 
 当一个外包角色或镜头“能打开但很慢”、Reference 套得混乱、纹理与缓存缺失、插件节点变成
 unknown，或者某个控制器一动就让全场景重新计算时，MayaScope 帮助 TD 从“感觉这里有问题”
 一路走到“看见结构、找到证据、评估影响、安全处理并重新验证”。
 
-从技术上说，它把 DAG、DG、Evaluation、Profiler、引用、插件和运行时状态组织成可查询、
-可解释、可交互的场景模型，而不是继续堆叠互不相干的小脚本。
+它不是把 Maya 命令重新包成一排按钮，而是把 DAG、DG、Evaluation、Profiler、引用、插件和
+运行时状态组织成一套可查询、可解释、可回放的调查模型。
 
-![MayaScope 在真实 Maya 2025 GUI 中运行](docs/images/real-maya-gui.png)
+## 作品集展示目标
 
-![MayaScope 根因透镜：真实 Maya DG 因果走廊](docs/images/root-cause-lens-wide.png)
+这个项目用一个完整产品证明我不只会“写 Maya 小工具”，而是能够把 **TD 算法、宿主工程、
+安全操作、动态 UI 与可交付发布流程**做成同一条生产闭环。
+
+| 面试官可以重点看 | 项目中的真实实现 |
+| --- | --- |
+| 场景与图算法 | 稳定节点身份、DAG/DG 图谱、CSR 查询索引、因果候选排序、结构 Delta 与百万连接语义窗口 |
+| 性能与故障定位 | Maya Profiler 事件映射、AB/BA 成对实验、bootstrap 置信区间、Crash Bisect / `ddmin` |
+| Maya 生产安全 | ChangePlan 预览、单次 Undo、执行后重采集验证、Reference 边界和恢复回执 |
+| PySide 产品设计 | 原生 Maya 2025 + PySide6，中文 Spectral Causal Atlas、自绘光谱、动态反馈、窄停靠与 reduced-motion |
+| Pipeline 工程 | 隐藏 mayapy 批处理、签名报告、断点恢复、项目发布门禁、PID 精确归属与 Job Object 清理 |
+| 真实交付能力 | Maya Module 安装/升级/恢复/卸载、Release ZIP 清单校验、隔离干净安装回放和中文运维文档 |
+
+推荐评审顺序：先看下面的 **30 秒产品说明**和**真实界面证据**，再沿着
+“Scene Atlas → Root Cause Lens → Counterfactual Profiler → ChangePlan”看完整调查闭环；
+工程细节可直接跳到[架构说明](docs/ARCHITECTURE.md)和[测试证据](#可信工程与验证边界)。
 
 ## 30 秒看懂它能做什么
 
@@ -52,7 +75,22 @@ Scene Clinic 体检：把零散报错整理成可解释的问题和事故
 这条闭环是 MayaScope 与普通“选对象、点按钮”的 Shelf 工具最重要的区别：它不仅执行命令，
 还负责解释为什么做、会影响什么，以及做完之后凭什么相信结果。
 
-上图来自一个由测试启动并精确持有 PID 的真实 Maya 2025 GUI 进程，不是独立 Qt 仿制窗口：
+## 真实界面证据
+
+以下画面全部复用仓库中的生产 Widget 和真实数据路径，不是另画的概念稿。真实 Maya 截图与
+同版本离屏大规模视图分别标注，方便区分“宿主验证”和“清晰展示”。
+
+| 根因透镜：真实 Maya DG 因果走廊 | 外部依赖谱系：序列缺口与路径证据 |
+| --- | --- |
+| ![根因透镜](docs/images/root-cause-lens-wide.png) | ![依赖谱系](docs/images/dependency-lineage.png) |
+| 插件幽灵：未知插件登记与影响节点 | Reference 轨道：命名空间与归属关系 |
+| ![插件幽灵诊断](docs/images/plugin-ghost-signal.png) | ![引用轨道](docs/images/reference-orbit.png) |
+| 项目发布列车：安全暂停与批量门禁 | 百万连接语义窗口：生产 View 离屏规模验收 |
+| ![项目发布列车](docs/images/project-queue-guarded-running.png) | ![百万连接语义窗口](docs/images/atlas-million-window.png) |
+
+## 可信工程与验证边界
+
+首张主界面截图来自一个由测试启动并精确持有 PID 的真实 Maya 2025 GUI 进程，不是独立 Qt 仿制窗口：
 `MayaScopeSpectralWorkspace` 的父窗口实际为 `MayaWindow`。探针同时验证重复启动、开发热重载、
 选择回调、动态计时器、菜单卸载和宿主退出；测试完成后只结束自己创建的 Maya，保留启动前已有会话。
 
@@ -89,26 +127,28 @@ Counterfactual Spectrum 也已从主窗口拆出：`presentation/counterfactual.
 AB/BA 配对，再统一生成中文结论、置信区间、节点包含耗时解释、恢复回执与证据归档；
 `ui/counterfactual.py` 只渲染同一个不可变状态，并保留原有双柱光谱、扫描线和动态交互。
 
-## 启动新版调查工作区
+## 安装与启动
 
-当前展示版以 **Maya 2025 + PySide6** 为唯一宿主基线。把 `D:\\3D\\_tools` 加入 Maya 的 Python 路径，然后执行：
-
-```python
-from MayaScope import launch
-launch.run()  # 启动 Spectral Scene Atlas
-```
-
-首次启动 Observatory 会幂等创建会话级 `MayaScope` 主菜单，不写 Preferences。顶栏
-**Host Beacon** 会即时、只读显示 Maya 版本/API 与 Runner 边界；点击后在 Evidence Rail 展示
-PySide、Evaluation、Module 和 mayapy 详情。窄屏会收起 Beacon，而不是压缩主要操作。
-
-也可以使用不会修改 `userSetup.py` 的用户级 Maya Module 安装器；完整恢复说明见
-[`docs/OPERATIONS.md`](docs/OPERATIONS.md)。
+当前展示版只支持 **Windows + Maya 2025 + PySide6**。推荐从
+[GitHub Release](https://github.com/Ubik42/MayaScope/releases/tag/v3.0.0-showcase) 下载 ZIP，解压后在
+包含 `MayaScope` 文件夹的目录运行：
 
 ```powershell
 python -m MayaScope.install install
 python -m MayaScope.doctor
 ```
+
+安装器只注册用户级 Maya Module，不修改 `userSetup.py`，也不写入 Maya Preferences。随后在 Maya
+Script Editor 的 Python 页签执行：
+
+```python
+from MayaScope import launch
+launch.run()
+```
+
+首次启动 Observatory 会幂等创建会话级 `MayaScope` 主菜单，不写 Preferences。顶栏
+**Host Beacon** 会即时、只读显示 Maya 版本/API 与 Runner 边界；点击后在 Evidence Rail 展示
+PySide、Evaluation、Module 和 mayapy 详情。窄屏会收起 Beacon，而不是压缩主要操作。
 
 安装器现在对升级和卸载都保留可恢复备份。恢复时必须显式指定目标备份，安装器会验证它确实位于
 当前 Maya 2025 Module 目录且由 MayaScope 管理，不会猜测“最新文件”或覆盖同名第三方 Module：
