@@ -492,3 +492,18 @@ Clinic、Lens 与视觉渲染之间的控制流从主窗口迁出，再拆 Clini
 
 整个 `/goal` 继续保持 active；下一阶段拆分 Scene Clinic View 与中文 Evidence Presenter，使规则阵列、
 Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordinator 与 ChangePlan 安全边界不变。
+
+## 第三十五里程碑进度（完成：Scene Clinic Rail 与 Evidence Presenter）
+
+1. 新增宿主无关 `presentation.ClinicEvidencePresenter`，统一等待、空规则、故障隔离、正常结果、Issue 与 Incident 的中文证据状态。
+2. `EvidencePanelState` 把标题、正文、操作文案和可执行状态冻结为一个结果，并拒绝空白用户文案。
+3. 新增 `ui.SceneClinicView`，独立拥有 Issue/Incident 卡片、滚动区、证据正文、ChangePlan 入口和回滚入口。
+4. Workspace 不再直接创建、销毁或持有 `issue_heading`、`evidence`、`plan_button` 与 Issue 卡片列表。
+5. 事件簇引用不存在的 Issue 时明确拒绝渲染，不会静默漏掉诊断；旧 `_populate_issues` 不再越过 Coordinator 手动修改选择状态。
+6. 原有 18px Rail 留白、紧凑宽度、规则阵列、光谱动效、中文对象名和 QSS 选择器全部保留，并补充中文可访问名称。
+7. 新增 7 项 Presenter/View 契约，普通 Python 总计 215 项通过（19 项宿主限定跳过）。
+8. 真实 Maya 2025 PID 39012 在 20.824 秒内通过首次启动、重复启动、热重载、选择回调、中文绘制与关闭；9 个活动计时器归零。
+9. `ui/workspace.py` 降至 4679 行；`ui/clinic.py` 279 行，`presentation/evidence.py` 140 行。
+
+整个 `/goal` 继续保持 active；下一阶段把已作为 Scene Clinic Rail 子控件运行的 Rule Array / Spectrum
+定义迁入 `ui/clinic.py`，再扩展 Coordinator 的 Profiler、Runtime 与 Counterfactual 代次边界。

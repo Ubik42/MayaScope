@@ -67,6 +67,8 @@ Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 �
 没有为了“重构”另画一套截图专用前端。
 核心调查控制流由宿主无关 `application.InvestigationCoordinator` 校验快照代次、Scene Clinic 结果、
 Maya 选择和 Root Cause Lens，再以类型化意图驱动同一个生产 Atlas；旧异步结果不会静默覆盖新场景。
+右侧 Scene Clinic Rail 也已独立管理 Issue/Incident 卡片、因果证据和操作状态；中文证据由不依赖
+Maya/Qt 的 Presenter 生成，主窗口不再直接拼接 Clinic 文案或销毁诊断卡片。
 
 ## 启动新版调查工作区
 

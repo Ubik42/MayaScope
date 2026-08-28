@@ -46,9 +46,11 @@ QObject Worker 已迁出主窗口模块。第二阶段已提取 UI Foundation �
 Qt 枚举和中文确认框有统一边界，Atlas 的节点/连接、语义渲染窗口、选择与光谱覆盖不再定义在主窗口。
 第三阶段新增宿主无关 Investigation Coordinator：Scene/Clinic 结果先验证快照代次与身份，再原子
 生成 Presentation State、Delta 和类型化 Atlas Intent；Maya 单选/多选/清空、Lens 与候选也不再由
-QWidget 方法各自猜测状态。`ui/workspace.py` 当前 4856 行，显式桥接代码令它比上阶段增加 21 行，
-但 408 行业务编排和 42 行渲染分派已经独立。下一阶段拆 Scene Clinic View；不能把本阶段描述成
-整个主窗口重构完毕。
+QWidget 方法各自猜测状态。第四阶段新增独立 Scene Clinic Rail 与宿主无关 Evidence Presenter：
+Issue/Incident 卡片、证据正文和操作状态不再由主窗口直接管理，失配事件簇会 fail closed。
+`ui/workspace.py` 当前 4679 行，`ui/clinic.py` 279 行，`presentation/evidence.py` 140 行；现有
+Clinic Rule Array / Spectrum 仍作为独立 Rail 的子控件复用，下一阶段再机械迁移其定义。不能把本阶段
+描述成整个主窗口重构完毕。
 
 当前宿主策略：展示版只以 Maya 2025 + PySide6 为开发和验收基线。先把一个版本的
 视觉完成度、动态交互和可靠性做深，不并行维护 Maya 2024/PySide2；核心数据与算法

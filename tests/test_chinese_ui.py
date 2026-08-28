@@ -14,9 +14,11 @@ class ChineseInterfaceTests(unittest.TestCase):
             self.assertRegex(text, r"[\u4e00-\u9fff]")
 
     def test_workspace_has_no_legacy_english_display_headings(self):
-        source = (
-            Path(__file__).resolve().parents[1] / "ui" / "workspace.py"
-        ).read_text(encoding="utf-8")
+        ui_root = Path(__file__).resolve().parents[1] / "ui"
+        source = "\n".join(
+            (ui_root / name).read_text(encoding="utf-8")
+            for name in ("workspace.py", "clinic.py")
+        )
         required = (
             "场景图谱  /  实时取证",
             "场景诊所  /  规则阵列",

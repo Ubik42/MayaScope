@@ -70,6 +70,7 @@ from ..runner import (
 )
 from ..storage import ExperimentStore, SnapshotStore
 from .atlas import MAX_RENDER_NODES, SpectralAtlasView
+from .clinic import SceneClinicView
 from .foundation import (
     COLORS,
     confirm_action as _confirm_action,
@@ -706,87 +707,6 @@ class ClinicRuleArray(QtWidgets.QFrame):
 
     def set_motion_enabled(self, enabled: bool):
         self.spectrum.set_motion_enabled(enabled)
-
-
-class IncidentCard(QtWidgets.QFrame):
-    activated = QtCore.Signal(object)
-
-    def __init__(self, incident: Incident, ordinal: int, parent=None):
-        super().__init__(parent)
-        self.incident = incident
-        self.setObjectName("IncidentCard")
-        self.setCursor(QtGui.QCursor(_qt_enum(QtCore.Qt, "PointingHandCursor")))
-        self.setFocusPolicy(_qt_enum(QtCore.Qt, "StrongFocus"))
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(12, 9, 12, 9)
-        layout.setSpacing(3)
-        index = QtWidgets.QLabel(
-            "事件簇 %02d  /  %s 项发现  /  %s 个节点"
-            % (ordinal, len(incident.issue_ids), len(incident.affected_node_ids))
-        )
-        index.setObjectName("IncidentIndex")
-        layout.addWidget(index)
-        title = QtWidgets.QLabel(incident.title)
-        title.setObjectName("IncidentTitle")
-        title.setWordWrap(True)
-        layout.addWidget(title)
-        reason = QtWidgets.QLabel("  ·  ".join(item.value for item in incident.evidence[:2]))
-        reason.setObjectName("IncidentReason")
-        reason.setWordWrap(True)
-        layout.addWidget(reason)
-
-    def mousePressEvent(self, event):
-        self.activated.emit(self.incident)
-        super().mousePressEvent(event)
-
-    def keyPressEvent(self, event):
-        if event.key() in (_qt_enum(QtCore.Qt, "Key_Return"), _qt_enum(QtCore.Qt, "Key_Space")):
-            self.activated.emit(self.incident)
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-
-class IssueCard(QtWidgets.QFrame):
-    activated = QtCore.Signal(object)
-
-    def __init__(self, issue: Issue, spec: Optional[RuleSpec] = None, parent=None):
-        super().__init__(parent)
-        self.issue = issue
-        self.setObjectName("IssueCard")
-        self.setCursor(QtGui.QCursor(_qt_enum(QtCore.Qt, "PointingHandCursor")))
-        self.setFocusPolicy(_qt_enum(QtCore.Qt, "StrongFocus"))
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(13, 11, 13, 11)
-        layout.setSpacing(5)
-        title = QtWidgets.QLabel(issue.title)
-        title.setObjectName("IssueTitle")
-        title.setWordWrap(True)
-        layout.addWidget(title)
-        severity_name = {"INFO": "提示", "WARNING": "警告", "ERROR": "错误", "CRITICAL": "严重"}.get(issue.severity.name, issue.severity.name)
-        severity = QtWidgets.QLabel("%s  /  %s 个信号" % (severity_name, len(issue.affected_node_ids)))
-        severity.setObjectName("Severity%s" % issue.severity.name.title())
-        layout.addWidget(severity)
-        if spec:
-            category = {"integrity": "完整性", "performance": "性能", "references": "引用", "pipeline": "流程"}.get(spec.category, spec.category)
-            confidence = {"deterministic": "确定性", "strong": "高置信", "heuristic": "启发式"}.get(spec.confidence, spec.confidence)
-            cost = {"cheap": "轻量", "moderate": "常规", "expensive": "深度"}.get(spec.cost, spec.cost)
-            repair = {"diagnostic": "仅诊断", "previewed": "可预览修复"}.get(spec.repair_kind, spec.repair_kind)
-            contract = QtWidgets.QLabel("%s  ·  %s  ·  %s扫描  ·  %s" % (category, confidence, cost, repair))
-            contract.setObjectName("IssueContract")
-            contract.setWordWrap(True)
-            layout.addWidget(contract)
-
-    def mousePressEvent(self, event):
-        self.activated.emit(self.issue)
-        super().mousePressEvent(event)
-
-    def keyPressEvent(self, event):
-        if event.key() in (_qt_enum(QtCore.Qt, "Key_Return"), _qt_enum(QtCore.Qt, "Key_Space")):
-            self.activated.emit(self.issue)
-            event.accept()
-            return
-        super().keyPressEvent(event)
 
 
 class CandidateCard(QtWidgets.QFrame):
@@ -2287,19 +2207,6 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.atlas.nodeActivated.connect(self._node_selected)
         splitter.addWidget(self.atlas)
 
-        self.issue_rail = QtWidgets.QFrame()
-        self.issue_rail.setObjectName("IssueRail")
-        self.issue_rail.setMinimumWidth(320)
-        self.issue_rail.setMaximumWidth(430)
-        rail_layout = QtWidgets.QVBoxLayout(self.issue_rail)
-        rail_layout.setContentsMargins(18, 18, 18, 18)
-        eyebrow = QtWidgets.QLabel("问题证据")
-        eyebrow.setObjectName("Eyebrow")
-        rail_layout.addWidget(eyebrow)
-        self.issue_heading = QtWidgets.QLabel("等待场景信号")
-        self.issue_heading.setObjectName("RailHeading")
-        self.issue_heading.setWordWrap(True)
-        rail_layout.addWidget(self.issue_heading)
         self.clinic_array = ClinicRuleArray(
             self._clinic_registry,
             self._clinic_profiles,
@@ -2310,35 +2217,13 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             self.clinic_array.set_config_error(self._clinic_config_error)
         self.clinic_array.runRequested.connect(self._run_clinic)
         self.clinic_array.ruleFocusRequested.connect(self._focus_rule_signal)
-        rail_layout.addWidget(self.clinic_array)
-        self.issue_scroll = QtWidgets.QScrollArea()
-        self.issue_scroll.setWidgetResizable(True)
-        self.issue_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.issue_scroll.setHorizontalScrollBarPolicy(_qt_enum(QtCore.Qt, "ScrollBarAlwaysOff"))
-        self.issue_host = QtWidgets.QWidget()
-        self.issue_host.setMinimumWidth(0)
-        self.issue_host.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
-        self.issue_list = QtWidgets.QVBoxLayout(self.issue_host)
-        self.issue_list.setContentsMargins(0, 8, 0, 8)
-        self.issue_list.setSpacing(9)
-        self.issue_list.addStretch(1)
-        self.issue_scroll.setWidget(self.issue_host)
-        rail_layout.addWidget(self.issue_scroll, 1)
-        self.evidence = QtWidgets.QLabel("捕获场景后将在这里呈现因果证据。")
-        self.evidence.setObjectName("Evidence")
-        self.evidence.setWordWrap(True)
-        rail_layout.addWidget(self.evidence)
-        self.plan_button = QtWidgets.QPushButton("预览变更计划")
-        self.plan_button.setObjectName("PlanButton")
-        self.plan_button.setEnabled(False)
-        self.plan_button.clicked.connect(self._preview_plan)
-        rail_layout.addWidget(self.plan_button)
-        self.rollback_button = QtWidgets.QPushButton("↶  回滚上次变更计划")
-        self.rollback_button.setObjectName("RollbackButton")
-        self.rollback_button.setVisible(False)
-        self.rollback_button.clicked.connect(self._rollback_last_plan)
-        rail_layout.addWidget(self.rollback_button)
-        splitter.addWidget(self.issue_rail)
+        self.clinic_view = SceneClinicView(self.clinic_array)
+        self.clinic_view.issueActivated.connect(self._select_issue)
+        self.clinic_view.incidentActivated.connect(self._select_incident)
+        self.clinic_view.planRequested.connect(self._preview_plan)
+        self.clinic_view.rollbackRequested.connect(self._rollback_last_plan)
+        self.rollback_button = self.clinic_view.rollback_button
+        splitter.addWidget(self.clinic_view)
         splitter.setStretchFactor(0, 1)
         splitter.setSizes([1100, 350])
         outer.addWidget(splitter, 1)
@@ -2573,9 +2458,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.depth_label.setVisible(not compact)
         self.lens_focus.setVisible(not compact)
         self.search.setMaximumWidth(175 if compact else 310)
-        self.issue_rail.setMinimumWidth(270 if compact else 320)
-        self.issue_rail.setMaximumWidth(330 if compact else 430)
-        self.clinic_array.set_compact(compact)
+        self.clinic_view.set_compact(compact)
         super().resizeEvent(event)
         if self._lens_report:
             report = self._lens_report
@@ -2850,12 +2733,11 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             )
             for issue in report.issues
         ) or "未触发任何运行时风险规则。"
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "运行时执行表面\n%s\n\n可观测性边界\n%s"
             % (findings, "\n".join("• %s" % item for item in report.limitations))
         )
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("仅清点 · 不自动终止")
+        self.clinic_view.set_action("仅清点 · 不自动终止", enabled=False)
         self.status.setText(
             "  运行时星图  ·  %s 个信号  ·  %s 个回调节点"
             % (
@@ -3086,46 +2968,14 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         )
 
     def _populate_issues(self):
-        while self.issue_list.count() > 1:
-            item = self.issue_list.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        failures = self._clinic_report.failures if self._clinic_report else ()
-        if self._clinic_report and not self._clinic_report.runs:
-            self.issue_heading.setText("没有启用场景诊所规则")
-        elif failures:
-            self.issue_heading.setText("%s 项发现 · %s 条规则异常" % (len(self._issues), len(failures)))
-        else:
-            self.issue_heading.setText(
-                "%s 个事件簇 · %s 项发现"
-                % (len(self._incidents), len(self._issues))
-                if self._issues else "场景信号正常"
-            )
+        if self._clinic_report is None:
+            return
         specs = {spec.id: spec for spec in self._clinic_registry.specs}
-        issues_by_id = {issue.id: issue for issue in self._issues}
-        for ordinal, incident in enumerate(self._incidents, 1):
-            incident_card = IncidentCard(incident, ordinal)
-            incident_card.activated.connect(self._select_incident)
-            self.issue_list.insertWidget(self.issue_list.count() - 1, incident_card)
-            for issue_id in incident.issue_ids:
-                issue = issues_by_id[issue_id]
-                card = IssueCard(issue, specs.get(issue.rule_id))
-                card.activated.connect(self._select_issue)
-                self.issue_list.insertWidget(self.issue_list.count() - 1, card)
-        self._presentation = self._presentation.update(
-            selected_issue=None, selected_incident=None
+        self.clinic_view.render_report(
+            self._clinic_report,
+            self._incidents,
+            specs,
         )
-        self.plan_button.setEnabled(False)
-        if self._clinic_report and not self._clinic_report.runs:
-            self.evidence.setText("请至少启用一条诊所规则，然后扫描已冻结的场景快照。")
-        elif failures:
-            self.evidence.setText(
-                "规则异常已隔离\n\n%s\n\n其余规则已完成；异常规则不会被误判为干净结果。"
-                % "\n".join("%s  ·  %s" % (item.rule_id, item.message) for item in failures)
-            )
-        else:
-            self.evidence.setText("选择一个异常，查看证据与受影响拓扑。")
 
     def _start_clinic_analysis(
         self,
@@ -3288,11 +3138,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._apply_investigation_transition(transition)
         self._hide_lens_chrome()
         issue = self._selected_issue
-        evidence = "\n".join("%s  ·  %s" % (item.label, item.value) for item in issue.evidence)
-        self.evidence.setText("%s\n\n%s\n\n%s" % (issue.description, evidence, issue.id))
         plan = plan_for_issue(issue, self._snapshot) if self._snapshot else None
-        self.plan_button.setEnabled(plan is not None)
-        self.plan_button.setText("预览变更计划" if plan else "仅提供诊断")
+        self.clinic_view.present_issue(issue, has_plan=plan is not None)
 
     def _focus_rule_signal(self, rule_id: str):
         issue = next((item for item in self._issues if item.rule_id == rule_id), None)
@@ -3322,7 +3169,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         )
         if node_ids:
             self.atlas.highlight(node_ids)
-        self.issue_heading.setText(issue.title)
+        self.clinic_view.set_heading(issue.title)
         self.status.setText(
             "  已聚焦%s  ·  %s 项关联发现  ·  %s 个受影响身份"
             % (
@@ -3346,31 +3193,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._hide_lens_chrome()
         incident = self._selected_incident
         issue_map = {issue.id: issue for issue in self._issues}
-        findings = "\n".join(
-            "• %s  [%s]" % (issue_map[issue_id].title, issue_map[issue_id].severity.name)
-            for issue_id in incident.issue_ids
-        )
-        evidence = "\n".join("%s  ·  %s" % (item.label, item.value) for item in incident.evidence)
-        self.issue_heading.setText(incident.title)
         incident_issues = tuple(issue_map[issue_id] for issue_id in incident.issue_ids)
         plan = plan_for_issues(incident_issues, self._snapshot)
-        repair_note = (
-            "%s 项可修复发现可合并到一个经验证的 Maya Undo 块中。"
-            % len(plan.issue_ids)
-            if plan else
-            "该事件簇仅提供诊断，不建议自动修改场景。"
-        )
-        self.evidence.setText(
-            "事件簇范围\n%s\n\n关联证据\n%s\n\n诊断发现\n%s\n\n批处理意图\n%s"
-            % (incident.id, evidence, findings, repair_note)
-        )
-        self.plan_button.setEnabled(plan is not None)
-        self.plan_button.setText(
-            "预览批量变更计划"
-            if plan and len(plan.issue_ids) > 1 else
-            "预览事件簇变更计划"
-            if plan else
-            "仅诊断事件簇"
+        self.clinic_view.present_incident(
+            incident,
+            issue_map,
+            repairable_issue_count=len(plan.issue_ids) if plan else 0,
         )
         self.status.setText(
             "  已聚焦事件簇  ·  %s 项发现  ·  %s 个受影响身份"
@@ -3417,8 +3245,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _finish_changeplan_verification(self, plan, receipt):
         remaining = set(plan.issue_ids).intersection(issue.id for issue in self._issues)
         verified = not remaining
-        self.issue_heading.setText("变更计划验证通过" if verified else "变更计划需要复核")
-        self.evidence.setText(
+        self.clinic_view.set_heading("变更计划验证通过" if verified else "变更计划需要复核")
+        self.clinic_view.set_body(
             "执行回执\n%s\n\n%s\n\n重新捕获结果\n%s"
             % (
                 receipt.plan_id,
@@ -3458,8 +3286,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.capture(after=lambda: self._finish_rollback_verification(plan_id))
 
     def _finish_rollback_verification(self, plan_id):
-        self.issue_heading.setText("变更计划已回滚")
-        self.evidence.setText(
+        self.clinic_view.set_heading("变更计划已回滚")
+        self.clinic_view.set_body(
             "回滚回执\n%s\n\nMaya 恢复已验证的 Undo 块后，场景已重新捕获。"
             % plan_id
         )
@@ -3527,13 +3355,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             return
         direction = report.direction
         self.lens_ribbon.set_report(report, self._snapshot, measured)
-        self.issue_heading.setText("根因透镜")
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("结构证据")
+        self.clinic_view.set_heading("根因透镜")
+        self.clinic_view.set_action("结构证据", enabled=False)
         if report.candidates:
             self._candidate_selected(report.candidates[0])
         else:
-            self.evidence.setText(
+            self.clinic_view.set_body(
                 "在深度 %s 内未找到%s DG 候选。\n\n"
                 "这说明结构范围为空，但不能证明该症状没有运行时原因。"
                 % (report.max_depth, "上游" if direction == "upstream" else "下游")
@@ -3586,7 +3413,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         )
         reasons = "\n".join("• %s" % reason for reason in candidate.reasons)
         plug_text = "\n".join(plugs) if plugs else "节点身份直接命中"
-        self.issue_heading.setText(node.name)
+        self.clinic_view.set_heading(node.name)
         measured = None
         if self._measured_report:
             measured = next(
@@ -3611,7 +3438,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                     self._measured_report.selection_end_us / 1000.0,
                 )
             )
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "%s结构信号 %.1f / 99\n该分数不是概率\n\n%s\n\n因果路径\n%s\n\nPlug 证据\n%s\n\n评分因素\n%s"
             % (measurement, candidate.structural_score, reasons, path, plug_text, factors)
         )
@@ -3619,8 +3446,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _show_host_health(self):
         health = self._host_health
         issues = "\n".join("· %s" % item for item in health.issues) or "未检测到宿主边界问题。"
-        self.issue_heading.setText("宿主信标")
-        self.evidence.setText(
+        self.clinic_view.set_heading("宿主信标")
+        self.clinic_view.set_body(
             "MAYA 宿主\n"
             "Maya %s · API %s\n"
             "PySide %s · MayaScope %s\n"
@@ -3641,8 +3468,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 issues,
             )
         )
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("只读宿主检查")
+        self.clinic_view.set_action("只读宿主检查", enabled=False)
         self.status.setText(
             "  宿主%s  ·  MAYA %s  ·  API %s  ·  PYSIDE %s  ·  模块 %s"
             % (
@@ -3853,8 +3679,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             )
             for item in attempts[-10:]
         )
-        self.issue_heading.setText("故障棱镜")
-        self.evidence.setText(
+        self.clinic_view.set_heading("故障棱镜")
+        self.clinic_view.set_body(
             "已隔离原因\n%s\n\n"
             "结果\n%s · %s\n%s 次探针 · %s 次缓存命中\n\n"
             "串行探针轨迹\n%s\n\n"
@@ -3871,8 +3697,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 result.manifest_sha256,
             )
         )
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("复现胶囊已封存")
+        self.clinic_view.set_action("复现胶囊已封存", enabled=False)
         self.status.setText(
             "  故障二分%s  ·  %s  ·  胶囊 SHA %s"
             % (
@@ -3890,8 +3715,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             context={"plan_id": self._bisect_plan.plan_id if self._bisect_plan else ""},
         )
         self.bisect_prism.fail(message)
-        self.issue_heading.setText("故障棱镜已停止")
-        self.evidence.setText(
+        self.clinic_view.set_heading("故障棱镜已停止")
+        self.clinic_view.set_body(
             "故障二分已停止\n%s\n\n源场景未被修改；已完成的探针目录仍可供检查。"
             % message
         )
@@ -4107,7 +3932,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         report = run.report
         self.counterfactual_strip.set_report(report)
         self.atlas.show_counterfactual(report)
-        self.issue_heading.setText("反事实性能采样")
+        self.clinic_view.set_heading("反事实性能采样")
         node_map = self._snapshot.node_map
         effects = []
         for rank, effect in enumerate(report.node_effects[:8], 1):
@@ -4129,7 +3954,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             if self._counterfactual_record else
             "归档不可用；结果仍保留在当前调查会话中。"
         )
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "反事实实验 / NODESTATE\n"
             "%s  ·  %s %s → %s\n\n"
             "墙钟时间结果\n"
@@ -4166,8 +3991,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 archive_receipt,
             )
         )
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("实验状态已恢复")
+        self.clinic_view.set_action("实验状态已恢复", enabled=False)
         self.status.setText(
             "  反事实实验：%s  ·  %+.1f%%  ·  状态与 Undo 已恢复"
             % ({"improved": "改善", "regressed": "变慢", "neutral": "无显著变化", "inconclusive": "证据不足"}.get(report.verdict, report.verdict), report.benefit_percent)
@@ -4196,7 +4020,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             self._run_lens()
         else:
             self.atlas.show_pulse(stats)
-            self.issue_heading.setText("性能采样脉冲")
+            self.clinic_view.set_heading("性能采样脉冲")
             top = []
             node_map = self._snapshot.node_map if self._snapshot else {}
             for rank, stat in enumerate(stats[:8], 1):
@@ -4205,7 +4029,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                     "%02d  %s  ·  %.3f ms  ·  %s 个事件"
                     % (rank, node.name if node else stat.node_id, stat.inclusive_duration_us / 1000.0, stat.event_count)
                 )
-            self.evidence.setText(
+            self.clinic_view.set_body(
                 "实测节点活动\n范围 %.3f–%.3f ms\n\n%s\n\n嵌套事件之间的包含耗时可能重叠。"
                 % (self._pulse_range[0] / 1000.0, self._pulse_range[1] / 1000.0, "\n".join(top) if top else "该范围内没有可唯一映射的节点事件。")
             )
@@ -4226,7 +4050,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._close_lens()
         self.atlas.show_delta(self._delta)
         summary = self._delta.summary()
-        self.issue_heading.setText("场景差异")
+        self.clinic_view.set_heading("场景差异")
         examples = []
         before_nodes = self._delta_before.node_map if self._delta_before else {}
         after_nodes = self._snapshot.node_map
@@ -4345,7 +4169,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                     rewire.target_plug,
                 )
             )
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "稳定 ID 结构对比\n%s → %s\n\n"
             "节点 +%s / −%s\n%s 项修改\n%s 次重连\n"
             "引用 +%s / −%s · %s 项修改\n外部依赖 +%s / −%s · %s 项修改\n插件幽灵 +%s / −%s · %s 项登记变化\n场景设置 %s 项变化 · 生命周期 %s 项变化\n连接 +%s / −%s\n\n%s"
@@ -4372,8 +4196,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 "\n".join(examples) if examples else "未检测到结构变化。",
             )
         )
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("只读对比")
+        self.clinic_view.set_action("只读对比", enabled=False)
         self.status.setText("  差异场  ·  %s 个身份发生变化" % len(self._delta.changed_node_ids))
 
     def _dismiss_delta(self):
@@ -4482,7 +4305,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         receipt = payload["scenes"][index]["receipt"]
         severity = receipt["severity_counts"]
         state = "阻断" if not receipt["ok"] or receipt["gate_failed"] else "通过"
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "项目发布证据  /  场景 %s/%s\n%s\n\n状态：%s\n"
             "问题：%s · 原子发现：%s\n严重：%s · 错误：%s · 警告：%s · 信息：%s\n\n"
             "场景签名：%s\n项目签名：%s\n规则配置：%s"
@@ -4650,7 +4473,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             storage_line = "磁盘容量：%s · 最小余量 %.1f GiB" % (
                 "通过" if ready else "不足", margin / 1073741824.0,
             )
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "批量发布队列  /  场景 %s/%s\n%s\n\n状态：%s\n尝试次数：%s\n"
             "开始：%s\n完成：%s\n%s\n%s\n\n场景源签名：%s\n审计报告签名：%s%s"
             % (
@@ -4755,7 +4578,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                     performance["slowdown_ratio"] * 100.0,
                 )
             )
-        self.evidence.setText(
+        self.clinic_view.set_body(
             "签名回归证据\n%s\n\n新增：%s · 升级：%s · 已解决：%s\n%s"
             % (
                 "检测到回归裂隙" if regression.get("gate_failed") else "基线保持稳定",
@@ -4783,14 +4606,13 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _present_closed_lens_chrome(self):
         """Reset Lens-only copy after its state and Atlas overlay are resolved."""
         self._hide_lens_chrome()
-        self.issue_heading.setText(
+        self.clinic_view.set_heading(
             "%s 个事件簇 · %s 项发现"
             % (len(self._incidents), len(self._issues))
             if self._issues else "场景信号正常"
         )
-        self.evidence.setText("选择一个异常或节点，开始调查。")
-        self.plan_button.setEnabled(False)
-        self.plan_button.setText("预览变更计划")
+        self.clinic_view.set_body("选择一个异常或节点，开始调查。")
+        self.clinic_view.set_action("预览变更计划", enabled=False)
 
     def _select_focus_in_maya(self):
         if not self._snapshot or not self._focus_node_id:
