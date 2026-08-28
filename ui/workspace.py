@@ -58,6 +58,7 @@ from ..presentation import (
     WorkspacePresentationState,
     present_lens_candidate,
     present_lens_result,
+    present_regression_report,
 )
 from ..qt_compat import QtCore, QtGui, QtWidgets
 from ..runtime_log import log_event
@@ -81,6 +82,7 @@ from .investigation_renderer import render_atlas_transition
 from .lens import LensControlBar, LensRibbon
 from .profiler import PulseHorizon
 from .project_gate import ProjectGateStrip
+from .regression import RegressionRiftStrip
 from .runtime import RuntimeConstellationStrip
 from .workers import BisectWorker, ClinicWorker, ProjectQueueWorker
 
@@ -156,145 +158,6 @@ class DeltaStrip(QtWidgets.QFrame):
         self.setVisible(True)
 
 
-
-
-class RegressionRiftCanvas(QtWidgets.QWidget):
-    """Baseline/current evaluation samples split around a luminous rift."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumWidth(220)
-        self.setFixedHeight(54)
-        self._performance = None
-        self._phase = 0.0
-        self._timer = QtCore.QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(46)
-
-    def set_performance(self, performance):
-        self._performance = performance if performance and performance.get("comparable") else None
-        self.update()
-
-    def set_motion_enabled(self, enabled):
-        if enabled:
-            self._timer.start(46)
-        else:
-            self._timer.stop()
-            self._phase = 0.0
-            self.update()
-
-    def _tick(self):
-        self._phase = (self._phase + 0.02) % 1.0
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        bounds = QtCore.QRectF(self.rect()).adjusted(8, 6, -8, -6)
-        painter.fillRect(self.rect(), QtGui.QColor("#080811"))
-        performance = self._performance
-        if not performance:
-            painter.setPen(COLORS["muted"])
-            painter.drawText(bounds, _qt_enum(QtCore.Qt, "AlignCenter"), "暂无成对性能证据")
-            return
-        baseline = tuple(performance["baseline"]["samples_us"])
-        current = tuple(performance["current"]["samples_us"])
-        values = baseline + current
-        low, high = min(values), max(values)
-        span = max(1.0, float(high - low))
-
-        def y(value):
-            return bounds.bottom() - (float(value) - low) / span * bounds.height()
-
-        count = max(len(baseline), len(current), 2)
-        step = bounds.width() / float(max(1, count - 1))
-        current_color = COLORS["orange"] if performance["regressed"] else COLORS["cyan"]
-        for series, color in ((baseline, COLORS["violet"]), (current, current_color)):
-            points = [QtCore.QPointF(bounds.left() + i * step, y(value)) for i, value in enumerate(series)]
-            glow = QtGui.QColor(color)
-            glow.setAlpha(48)
-            painter.setPen(QtGui.QPen(glow, 5.0))
-            for first, second in zip(points, points[1:]):
-                painter.drawLine(QtCore.QLineF(first, second))
-            painter.setPen(QtGui.QPen(color, 1.4))
-            for first, second in zip(points, points[1:]):
-                painter.drawLine(QtCore.QLineF(first, second))
-            painter.setBrush(color)
-            painter.setPen(_qt_enum(QtCore.Qt, "NoPen"))
-            for point in points:
-                painter.drawEllipse(point, 2.3, 2.3)
-        scan_x = bounds.left() + bounds.width() * self._phase
-        scan = QtGui.QColor(COLORS["acid"])
-        scan.setAlpha(75)
-        painter.setPen(QtGui.QPen(scan, 1.0))
-        painter.drawLine(QtCore.QLineF(scan_x, bounds.top(), scan_x, bounds.bottom()))
-
-
-class RegressionRiftStrip(QtWidgets.QFrame):
-    dismissRequested = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("RegressionRift")
-        self.setFixedHeight(76)
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(18, 8, 12, 8)
-        layout.setSpacing(14)
-        mark_box = QtWidgets.QVBoxLayout()
-        mark = QtWidgets.QLabel("≋  回归裂隙")
-        mark.setObjectName("RegressionMark")
-        mark_box.addWidget(mark)
-        self.identity = QtWidgets.QLabel("签名基线")
-        self.identity.setObjectName("RegressionMeta")
-        mark_box.addWidget(self.identity)
-        layout.addLayout(mark_box)
-        self.canvas = RegressionRiftCanvas()
-        layout.addWidget(self.canvas, 1)
-        result = QtWidgets.QVBoxLayout()
-        self.verdict = QtWidgets.QLabel("尚无证据")
-        self.verdict.setObjectName("RegressionVerdict")
-        self.detail = QtWidgets.QLabel("")
-        self.detail.setObjectName("RegressionMeta")
-        result.addWidget(self.verdict)
-        result.addWidget(self.detail)
-        layout.addLayout(result)
-        close = QtWidgets.QPushButton("×")
-        close.setObjectName("LensClose")
-        close.setToolTip("关闭回归证据")
-        close.clicked.connect(self.dismissRequested)
-        layout.addWidget(close)
-
-    def set_report(self, payload):
-        regression = payload["regression"]
-        performance = regression.get("performance", {})
-        self.canvas.set_performance(performance)
-        failed = bool(regression.get("gate_failed"))
-        self.verdict.setText("检测到回归裂隙" if failed else "基线保持稳定")
-        self.verdict.setProperty("failed", failed)
-        self.verdict.style().unpolish(self.verdict)
-        self.verdict.style().polish(self.verdict)
-        new = len(regression.get("new_findings", ()))
-        escalated = len(regression.get("escalated_findings", ()))
-        resolved = len(regression.get("resolved_findings", ()))
-        perf = "无性能配对"
-        if performance.get("comparable"):
-            perf = "%+.2f ms  ·  %+.1f%%" % (
-                performance.get("delta_us", 0.0) / 1000.0,
-                performance.get("slowdown_ratio", 0.0) * 100.0,
-            )
-        self.detail.setText("新增 %s · 升级 %s · 已解决 %s · %s" % (new, escalated, resolved, perf))
-        checksum = str(regression.get("baseline_report_sha256", ""))
-        self.identity.setText("基线 %s / 当前 %s" % (checksum[:8].upper(), str(payload.get("report_sha256", ""))[:8].upper()))
-        self.setVisible(True)
-
-    def set_motion_enabled(self, enabled):
-        self.canvas.set_motion_enabled(enabled)
-
-    def clear(self):
-        self.canvas.set_performance(None)
-        self.verdict.setText("尚无证据")
-        self.detail.clear()
-        self.identity.setText("签名基线")
 
 
 class CounterfactualSpark(QtWidgets.QWidget):
@@ -2791,10 +2654,10 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             payload = verify_audit_report(Path(selected))
             if not payload.get("regression"):
                 raise ValueError("审计报告中不包含基线对比证据")
+            self._show_regression_report(payload)
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "回归报告已拒绝", str(exc))
             return
-        self._show_regression_report(payload)
 
     def _open_project_audit(self):
         selected, _filter = QtWidgets.QFileDialog.getOpenFileName(
@@ -3081,46 +2944,13 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             QtCore.QTimer.singleShot(0, self.close)
 
     def _show_regression_report(self, payload):
+        state = present_regression_report(payload)
         self._regression_payload = payload
-        self.regression_rift.set_report(payload)
-        regression = payload["regression"]
-        active = tuple(
-            item.get("node_id", "")
-            for group in (
-                regression.get("new_findings", ()),
-                regression.get("escalated_findings", ()),
-            )
-            for item in group
-            if item.get("node_id") not in (None, "", "<scene>")
-        )
-        if active:
-            self.atlas.highlight(active)
-        performance = regression.get("performance", {})
-        perf_line = "性能证据不可用。"
-        if performance.get("comparable"):
-            perf_line = (
-                "求值中位数：%.2f → %.2f ms\n触发门槛：%.2f ms\n"
-                "实测变化：%+.2f ms (%+.1f%%)"
-                % (
-                    performance["baseline"]["median_us"] / 1000.0,
-                    performance["current"]["median_us"] / 1000.0,
-                    performance["required_delta_us"] / 1000.0,
-                    performance["delta_us"] / 1000.0,
-                    performance["slowdown_ratio"] * 100.0,
-                )
-            )
-        self.clinic_view.set_body(
-            "签名回归证据\n%s\n\n新增：%s · 升级：%s · 已解决：%s\n%s"
-            % (
-                "检测到回归裂隙" if regression.get("gate_failed") else "基线保持稳定",
-                len(regression.get("new_findings", ())),
-                len(regression.get("escalated_findings", ())),
-                len(regression.get("resolved_findings", ())),
-                perf_line,
-            )
-        )
-        state = "门禁失败" if regression.get("gate_failed") else "基线保持稳定"
-        self.status.setText("  回归裂隙  ·  %s" % state)
+        self.regression_rift.set_state(state)
+        if state.active_node_ids:
+            self.atlas.highlight(state.active_node_ids)
+        self.clinic_view.set_body(state.evidence_body)
+        self.status.setText("  %s" % state.status_text)
 
     def _dismiss_regression(self):
         self.regression_rift.setVisible(False)

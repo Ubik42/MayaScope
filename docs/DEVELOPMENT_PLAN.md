@@ -61,7 +61,10 @@ Runtime 分片控制器落地后，SceneSnapshot 捕获也已迁入宿主无关�
 新的 `ui/capture.py` 独立拥有七阶段场景探针、动态安全边界和 800px 紧凑布局。`ui/workspace.py`
 随后完成 Atlas 增量语义窗口，并把 Failure Prism 的结果映射迁入纯 `presentation/bisect.py`、自绘
 轨迹迁入 `ui/bisect.py`；主窗口只编排真实后台进程生命周期。`ui/workspace.py` 当前 3209 行，
-下一项架构重点是 Regression 表面或其余高风险应用状态，不扩大展示版功能面。
+随后又把 Regression Rift 的门禁、性能配对、Finding 计数、Atlas 高亮与中文正文统一到
+`presentation/regression.py`，自绘条带迁入 `ui/regression.py`；字段残缺的配对证据会在呈现前拒绝。
+`ui/workspace.py` 当前 3039 行，下一项架构重点是 Counterfactual/Delta 表面或项目队列剩余应用状态，
+不扩大展示版功能面。
 
 当前宿主策略：展示版只以 Maya 2025 + PySide6 为开发和验收基线。先把一个版本的
 视觉完成度、动态交互和可靠性做深，不并行维护 Maya 2024/PySide2；核心数据与算法

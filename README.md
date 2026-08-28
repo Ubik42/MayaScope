@@ -82,6 +82,9 @@ Profiler 地平线与 Runtime 星图分别位于 `ui/profiler.py`、`ui/runtime.
 Failure Prism 同样不再定义在主窗口：`presentation/bisect.py` 产生开始、探针、取消、部分收敛、完成
 与失败的不可变中文状态，`ui/bisect.py` 只负责真实 QPainter 轨迹和按钮呈现。主窗口保留后台进程
 生命周期编排，不让 QWidget 自己解释 Crash Bisect 领域结果。
+签名回归也采用同一边界：`presentation/regression.py` 一次校验门禁、性能配对、Finding 计数与节点
+身份，再把同一状态交给 `ui/regression.py`、Atlas、证据栏和状态栏；字段残缺的性能报告会在任何
+界面状态写入前被拒绝，不留下半呈现结果。
 
 ## 启动新版调查工作区
 

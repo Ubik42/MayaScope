@@ -653,3 +653,21 @@ Atlas 大图增量布局和渲染预算做下一条真实制作纵切；不继�
 
 整个 `/goal` 继续保持 active；下一阶段优先拆分 Regression Rift 的 Presenter/View，或审计项目队列
 与 Bisect 的剩余 Application 编排，以实际耦合风险决定，不扩张新功能面。
+
+## 第四十五里程碑进度（完成：Regression Rift 单一呈现状态）
+
+1. 新增宿主无关 `presentation.regression`，一次校验 regression 结构、Finding 列表、性能样本、
+   中位数、门槛、变化量和签名身份，不导入 Maya、Qt、Collector 或 Workspace。
+2. 条带结论、性能摘要、Atlas 高亮节点、证据正文和状态栏现在来自同一个不可变状态，删除主窗口与
+   View 对同一报告的重复解释。
+3. `comparable=true` 但缺少样本、摘要或阈值的报告会在任何 UI 状态写入前以中文错误拒绝；不会先
+   保存无效 payload、点亮部分节点或留下半呈现结果。
+4. 原有双曲线、发光采样点、动态扫描线和中文裂隙条带迁入 `ui/regression.py`；视觉算法、46 ms
+   动效节奏、关闭信号和 reduced-motion 行为保持不变。
+5. `ui/workspace.py` 从 3209 行降至 3039 行；新增 `ui/regression.py` 149 行、
+   `presentation/regression.py` 144 行。这是职责迁移，不冒充整个主窗口重构完成。
+6. 新增稳定、真实回归、去重节点高亮、无性能配对、残缺证据拒绝、View 中文呈现和依赖方向回归；
+   普通 Python 286 项通过（19 项宿主限定跳过）。本轮不启动真实 Maya，不新增宿主通过声明。
+
+整个 `/goal` 继续保持 active；下一阶段优先把 Counterfactual/Delta 遗留表面迁出主窗口，或把项目
+队列剩余编排迁入 Application，用实际耦合和失败风险决定。

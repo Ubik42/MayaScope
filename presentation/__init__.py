@@ -35,6 +35,13 @@ from .bisect import (
     present_bisect_attempt,
     request_bisect_cancel,
 )
+from .regression import (
+    RegressionPerformanceState,
+    RegressionPresentationError,
+    RegressionRiftState,
+    empty_regression_rift,
+    present_regression_report,
+)
 
 __all__ = [
     "ClinicEvidencePresenter",
@@ -65,4 +72,9 @@ __all__ = [
     "finish_bisect_prism",
     "present_bisect_attempt",
     "request_bisect_cancel",
+    "RegressionPerformanceState",
+    "RegressionPresentationError",
+    "RegressionRiftState",
+    "empty_regression_rift",
+    "present_regression_report",
 ]
