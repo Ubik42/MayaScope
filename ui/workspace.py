@@ -15,6 +15,11 @@ import threading
 from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 from ..actions import MayaChangeExecutor, plan_for_issue, plan_for_issues
+from ..application import (
+    InvestigationCoordinator,
+    InvestigationTransition,
+    resolve_host_selection,
+)
 from ..analysis.delta import SceneDelta, compare_snapshots
 from ..analysis.clinic import (
     ClinicReport,
@@ -24,17 +29,15 @@ from ..analysis.clinic import (
     RuleSpec,
 )
 from ..analysis.incidents import Incident
-from ..analysis.identity import build_host_identity_index
 from ..analysis.graph import (
     alias_graph_indexes,
     invalidate_graph_indexes,
 )
 from ..analysis.config import ClinicConfigError, ClinicEnvironment, load_environment_from_env
-from ..analysis.lens import RootCauseCandidate, RootCauseReport, build_root_cause_report
+from ..analysis.lens import RootCauseCandidate, RootCauseReport
 from ..analysis.measured_lens import (
     MeasuredCandidate,
     MeasuredRootCauseReport,
-    build_measured_root_cause_report,
 )
 from ..analysis.runtime import analyze_runtime
 from ..analysis.pulse import node_stats
@@ -73,6 +76,7 @@ from .foundation import (
     ensure_ui_fonts as _ensure_ui_fonts,
     qt_enum as _qt_enum,
 )
+from .investigation_renderer import render_atlas_transition
 from .workers import BisectWorker, ClinicWorker, ProjectQueueWorker
 
 
@@ -2059,6 +2063,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def __init__(self, parent=None, clinic_environment: Optional[ClinicEnvironment] = None):
         super().__init__(parent)
         self._presentation = WorkspacePresentationState()
+        self._investigation = InvestigationCoordinator()
         _ensure_ui_fonts()
         self.setObjectName(WINDOW_OBJECT_NAME)
         self.setWindowTitle("MayaScope · 光谱因果场景图谱")
@@ -2608,6 +2613,21 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.bisect_prism.set_motion_enabled(enabled)
         self.host_beacon.set_motion_enabled(enabled)
 
+    def _apply_investigation_transition(
+        self, transition: InvestigationTransition
+    ) -> None:
+        """Render one validated application transition through the real Atlas."""
+        self._presentation = transition.state
+        if transition.identity_index is not None:
+            self._host_identity_index = transition.identity_index
+        render_atlas_transition(self.atlas, transition)
+
+    def _hide_lens_chrome(self) -> None:
+        """Hide Lens widgets without independently mutating investigation state."""
+        self.lens_bar.setVisible(False)
+        self.lens_ribbon.setVisible(False)
+        self.pulse.counterfactual_button.setEnabled(False)
+
     def _set_selection_sync_enabled(self, enabled: bool):
         bridge = self._selection_bridge
         if bridge is None:
@@ -2649,53 +2669,49 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         names: Iterable[str],
         identity_index=None,
     ) -> Tuple[str, ...]:
-        identities = (
-            build_host_identity_index(snapshot)
-            if identity_index is None
-            else identity_index
-        )
-        result = []
-        seen = set()
-        for name in names:
-            node_id = identities.get(str(name))
-            if node_id is None:
-                continue
-            if node_id not in seen:
-                seen.add(node_id)
-                result.append(node_id)
-        return tuple(result)
+        return resolve_host_selection(snapshot, tuple(names), identity_index)
 
     def _apply_host_selection(self) -> None:
         if not self._snapshot or not self.selection_sync_button.isChecked():
             return
         names = self._pending_host_selection
-        node_ids = self._node_ids_for_host_selection(
-            self._snapshot, names, self._host_identity_index
-        )
-        if not names:
-            self._close_lens()
-            self.atlas.select_node_ids(())
-            self.status.setText("  MAYA 联动  ·  宿主选择已清空")
-            self._flash_selection_sync()
+        direction = "upstream" if self.upstream_button.isChecked() else "downstream"
+        try:
+            decision = self._investigation.host_selection(
+                self._presentation,
+                names,
+                identity_index=self._host_identity_index,
+                direction=direction,
+                max_depth=self.lens_depth.value(),
+                center=self.motion_button.isChecked(),
+            )
+        except Exception as exc:
+            self.status.setText("  MAYA 联动已拒绝  ·  %s" % exc)
             return
-        if not node_ids:
+        if decision.outcome == "unmapped":
             self.status.setText(
                 "  MAYA 联动  ·  当前选择不在快照中  ·  捕获场景可刷新身份映射"
             )
             return
-        if len(node_ids) == 1:
-            self.atlas.select_node_ids(
-                node_ids, center=self.motion_button.isChecked()
+        self._apply_investigation_transition(decision.transition)
+        if decision.outcome in {"empty", "multiple"}:
+            self._present_closed_lens_chrome()
+        if decision.outcome == "empty":
+            self.status.setText("  MAYA 联动  ·  宿主选择已清空")
+            self._flash_selection_sync()
+            return
+        if decision.outcome == "single":
+            node = self._snapshot.node_map[decision.node_ids[0]]
+            self.pulse.counterfactual_button.setEnabled(not node.referenced)
+            self.lens_focus.setText(node.name)
+            self.lens_focus.setToolTip(
+                node.dag_paths[0] if node.dag_paths else node.id
             )
-            self._activate_focus(node_ids[0])
-        else:
-            self._close_lens()
-            self.atlas.select_node_ids(
-                node_ids, center=self.motion_button.isChecked()
-            )
-            self.atlas.highlight(node_ids)
+            self.lens_bar.setVisible(True)
+            self._present_lens_result()
         self.status.setText(
-            "  MAYA 联动  ·  Maya → 图谱  ·  %s 个节点" % len(node_ids)
+            "  MAYA 联动  ·  Maya → 图谱  ·  %s 个节点"
+            % len(decision.node_ids)
         )
         self._flash_selection_sync()
 
@@ -2992,11 +3008,17 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _apply_captured_snapshot(
         self, snapshot, previous_snapshot, clinic_report, incidents, host_identity_index
     ):
-        issues = clinic_report.issues
-        self._close_lens()
-        self._presentation = self._presentation.present_scene(
-            snapshot, issues, clinic_report, incidents
+        transition = self._investigation.accept_scene(
+            self._presentation,
+            snapshot,
+            clinic_report,
+            incidents,
+            identity_index=host_identity_index,
+            previous_snapshot=previous_snapshot,
         )
+        self._apply_investigation_transition(transition)
+        self._hide_lens_chrome()
+        issues = self._issues
         self.runtime_constellation.clear()
         self.runtime_constellation.setVisible(False)
         self._regression_payload = None
@@ -3005,7 +3027,6 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.delta_strip.setVisible(False)
         self.counterfactual_strip.clear()
         self.counterfactual_strip.setVisible(False)
-        self._host_identity_index = host_identity_index
         self.runtime_button.setEnabled(True)
         self.clinic_array.set_scene_settings(
             snapshot.scene_settings,
@@ -3017,12 +3038,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         )
         self.clinic_array.set_report(clinic_report, len(incidents))
         self.archive_button.setEnabled(True)
-        priority_ids = self._node_ids_for_host_selection(
-            snapshot,
-            snapshot.metadata.get("selection", ()),
-            self._host_identity_index,
-        )
-        self.atlas.set_snapshot(snapshot, issues, priority_node_ids=priority_ids)
+        priority_ids = transition.atlas_intents[0].priority_node_ids
         self.pulse.set_summary(snapshot.summary())
         self.pulse.set_capture(None)
         self._populate_issues()
@@ -3050,8 +3066,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 dirty_state,
             )
         )
-        if previous_snapshot is not None:
-            self._set_delta(compare_snapshots(previous_snapshot, snapshot), previous_snapshot)
+        if self._delta is not None:
+            self.delta_strip.set_delta(self._delta)
         if priority_ids:
             self._activate_focus(priority_ids[0])
         if self._selection_bridge and self.selection_sync_button.isChecked():
@@ -3181,21 +3197,15 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 if callback is not None:
                     callback()
             else:
-                self._presentation = self._presentation.present_clinic(
-                    report, incidents
+                transition = self._investigation.accept_clinic(
+                    self._presentation,
+                    report,
+                    incidents,
+                    identity_index=host_identity_index,
                 )
-                self._host_identity_index = host_identity_index
+                self._apply_investigation_transition(transition)
+                self._hide_lens_chrome()
                 self.clinic_array.set_report(report, len(incidents))
-                self.atlas.set_snapshot(
-                    self._snapshot,
-                    self._issues,
-                    priority_node_ids=self._node_ids_for_host_selection(
-                        self._snapshot,
-                        self._snapshot.metadata.get("selection", ()),
-                        self._host_identity_index,
-                    ),
-                )
-                self._close_lens()
                 self._populate_issues()
                 self.status.setText(
                     "  场景诊所  ·  %s  ·  %s 条规则  ·  %s 个事件簇  ·  %s 条异常  ·  %.2f ms"
@@ -3268,9 +3278,16 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._start_clinic_analysis(self._snapshot, kind="scan")
 
     def _select_issue(self, issue: Issue):
-        self._close_lens()
-        self._presentation = self._presentation.select_issue(issue)
-        self.atlas.highlight(issue.affected_node_ids)
+        try:
+            transition = self._investigation.select_issue(
+                self._presentation, issue
+            )
+        except Exception as exc:
+            self.status.setText("  诊断选择已失效  ·  %s" % exc)
+            return
+        self._apply_investigation_transition(transition)
+        self._hide_lens_chrome()
+        issue = self._selected_issue
         evidence = "\n".join("%s  ·  %s" % (item.label, item.value) for item in issue.evidence)
         self.evidence.setText("%s\n\n%s\n\n%s" % (issue.description, evidence, issue.id))
         plan = plan_for_issue(issue, self._snapshot) if self._snapshot else None
@@ -3318,9 +3335,16 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _select_incident(self, incident: Incident):
         if not self._snapshot:
             return
-        self._close_lens()
-        self._presentation = self._presentation.select_incident(incident)
-        self.atlas.highlight(incident.affected_node_ids)
+        try:
+            transition = self._investigation.select_incident(
+                self._presentation, incident
+            )
+        except Exception as exc:
+            self.status.setText("  事件簇选择已失效  ·  %s" % exc)
+            return
+        self._apply_investigation_transition(transition)
+        self._hide_lens_chrome()
+        incident = self._selected_incident
         issue_map = {issue.id: issue for issue in self._issues}
         findings = "\n".join(
             "• %s  [%s]" % (issue_map[issue_id].title, issue_map[issue_id].severity.name)
@@ -3464,13 +3488,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _activate_focus(self, node_id: str):
         if not self._snapshot or node_id not in self._snapshot.node_map:
             return
-        self._presentation = self._presentation.focus(node_id)
         node = self._snapshot.node_map[node_id]
         self.pulse.counterfactual_button.setEnabled(not node.referenced)
         self.lens_focus.setText(node.name)
         self.lens_focus.setToolTip(node.dag_paths[0] if node.dag_paths else node.id)
         self.lens_bar.setVisible(True)
-        self._run_lens()
+        self._run_lens(node_id=node_id)
 
     def _set_lens_direction(self, direction: str):
         upstream = direction == "upstream"
@@ -3478,36 +3501,31 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.downstream_button.setChecked(not upstream)
         self._run_lens()
 
-    def _run_lens(self, *_args):
-        if not self._snapshot or not self._focus_node_id:
+    def _run_lens(self, *_args, node_id=None):
+        focus_node_id = node_id or self._focus_node_id
+        if not self._snapshot or not focus_node_id:
             return
         direction = "upstream" if self.upstream_button.isChecked() else "downstream"
         try:
-            if self._profiler_capture:
-                measured = build_measured_root_cause_report(
-                    self._snapshot,
-                    self._profiler_capture,
-                    self._focus_node_id,
-                    issues=self._issues,
-                    direction=direction,
-                    max_depth=self.lens_depth.value(),
-                    start_us=self._pulse_range[0],
-                    end_us=self._pulse_range[1],
-                )
-                report = measured.structural
-            else:
-                measured = None
-                report = build_root_cause_report(
-                    self._snapshot,
-                    self._focus_node_id,
-                    issues=self._issues,
-                    direction=direction,
-                    max_depth=self.lens_depth.value(),
-                )
+            transition = self._investigation.focus(
+                self._presentation,
+                focus_node_id,
+                direction=direction,
+                max_depth=self.lens_depth.value(),
+            )
         except Exception as exc:
             self.status.setText("  根因透镜失败  ·  %s" % exc)
             return
-        self._presentation = self._presentation.present_lens(report, measured)
+        self._apply_investigation_transition(transition)
+        self._present_lens_result()
+
+    def _present_lens_result(self):
+        """Render the already validated Lens generation without recomputing it."""
+        report = self._lens_report
+        measured = self._measured_report
+        if not self._snapshot or report is None:
+            return
+        direction = report.direction
         self.lens_ribbon.set_report(report, self._snapshot, measured)
         self.issue_heading.setText("根因透镜")
         self.plan_button.setEnabled(False)
@@ -3515,7 +3533,6 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if report.candidates:
             self._candidate_selected(report.candidates[0])
         else:
-            self.atlas.show_lens(report)
             self.evidence.setText(
                 "在深度 %s 内未找到%s DG 候选。\n\n"
                 "这说明结构范围为空，但不能证明该症状没有运行时原因。"
@@ -3545,8 +3562,15 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _candidate_selected(self, candidate: RootCauseCandidate):
         if not self._snapshot or not self._lens_report:
             return
-        self._selected_candidate = candidate
-        self.atlas.show_lens(self._lens_report, candidate)
+        try:
+            transition = self._investigation.select_candidate(
+                self._presentation, candidate
+            )
+        except Exception as exc:
+            self.status.setText("  根因候选已失效  ·  %s" % exc)
+            return
+        self._apply_investigation_transition(transition)
+        candidate = self._selected_candidate
         node_map = self._snapshot.node_map
         node = node_map[candidate.node_id]
         path = "  →  ".join(node_map[node_id].name for node_id in candidate.path_node_ids)
@@ -4752,16 +4776,13 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             self.atlas.clear_lens()
 
     def _close_lens(self, *_args):
-        self._presentation = self._presentation.clear_lens()
-        self.lens_bar.setVisible(False)
-        self.lens_ribbon.setVisible(False)
-        self.pulse.counterfactual_button.setEnabled(False)
-        if self._counterfactual_run and self.counterfactual_strip.isVisible():
-            self.atlas.show_counterfactual(self._counterfactual_run.report)
-        elif self._profiler_capture:
-            self.atlas.show_pulse(node_stats(self._profiler_capture, *self._pulse_range))
-        else:
-            self.atlas.clear_lens()
+        transition = self._investigation.close_lens(self._presentation)
+        self._apply_investigation_transition(transition)
+        self._present_closed_lens_chrome()
+
+    def _present_closed_lens_chrome(self):
+        """Reset Lens-only copy after its state and Atlas overlay are resolved."""
+        self._hide_lens_chrome()
         self.issue_heading.setText(
             "%s 个事件簇 · %s 项发现"
             % (len(self._incidents), len(self._issues))

@@ -477,3 +477,18 @@ Scene Clinic 的 Reference/Animation/Publish 首批规则与批量计划纵向�
 
 整个 `/goal` 继续保持 active；下一阶段优先建立 Atlas/Application Coordinator，把捕获、选择、
 Clinic、Lens 与视觉渲染之间的控制流从主窗口迁出，再拆 Clinic View；不重写已经验证的光谱视觉。
+
+## 第三十四里程碑进度（完成：Investigation Coordinator）
+
+1. 新增宿主无关 `application.InvestigationCoordinator`；不导入 Maya、PySide、QWidget 或主窗口。
+2. Scene/Clinic 异步结果进入状态前核对快照代次、Issue/Incident 唯一身份和受影响节点；旧结果直接拒绝，不再覆盖新场景。
+3. 新场景接收在一次 Transition 中生成 Presentation State、Scene Delta、稳定宿主身份索引和 Atlas Scene Intent。
+4. Maya 单选、多选、清空与无法映射成为四种显式决策；重名短名称继续拒绝猜测，单选的选择与 Lens 属于同一代。
+5. 结构/实测 Lens 在 Coordinator 中计算；旧 Issue、Incident 和 Candidate 均无法进入当前调查代。
+6. 关闭 Lens 会按状态恢复 Counterfactual、Profiler 或普通 Atlas 覆盖，不由 QWidget 重复猜测优先级。
+7. 新增 `ui/investigation_renderer.py`，只负责将类型化 Intent 分派到真实生产 Atlas，不包含业务判断。
+8. 新增 12 项协调器/渲染契约，普通 Python 总计 208 项通过（19 项宿主限定跳过）。
+9. 真实 Maya 2025 PID 49348 在 20.530 秒内通过首次启动、重复启动、热重载、选择回调、中文绘制与关闭；10 个活动定时器归零。
+
+整个 `/goal` 继续保持 active；下一阶段拆分 Scene Clinic View 与中文 Evidence Presenter，使规则阵列、
+Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordinator 与 ChangePlan 安全边界不变。

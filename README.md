@@ -65,6 +65,8 @@ Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 �
 当前生产界面仍是原生 Maya 2025 + PySide6：`ui/foundation.py` 统一中文字体、光谱色板和基础交互，
 `ui/atlas.py` 独立负责真实 Scene Atlas 的节点、连接、选择与动态证据覆盖；主窗口继续渐进迁移，
 没有为了“重构”另画一套截图专用前端。
+核心调查控制流由宿主无关 `application.InvestigationCoordinator` 校验快照代次、Scene Clinic 结果、
+Maya 选择和 Root Cause Lens，再以类型化意图驱动同一个生产 Atlas；旧异步结果不会静默覆盖新场景。
 
 ## 启动新版调查工作区
 

@@ -44,8 +44,11 @@ Presentation 拆分第一阶段现已完成：新增宿主无关、不可变 `Wo
 诊所、异常/事件选择、根因焦点、Profiler、Runtime、Delta 与反事实证据组织成显式语义转换；三个
 QObject Worker 已迁出主窗口模块。第二阶段已提取 UI Foundation 与 Scene Atlas View：颜色、字体、
 Qt 枚举和中文确认框有统一边界，Atlas 的节点/连接、语义渲染窗口、选择与光谱覆盖不再定义在主窗口。
-`ui/workspace.py` 从 5414 行降到 4835 行；Atlas 控制器和其余业务工作区仍待迁移，不能把本阶段描述成
-重构完毕。
+第三阶段新增宿主无关 Investigation Coordinator：Scene/Clinic 结果先验证快照代次与身份，再原子
+生成 Presentation State、Delta 和类型化 Atlas Intent；Maya 单选/多选/清空、Lens 与候选也不再由
+QWidget 方法各自猜测状态。`ui/workspace.py` 当前 4856 行，显式桥接代码令它比上阶段增加 21 行，
+但 408 行业务编排和 42 行渲染分派已经独立。下一阶段拆 Scene Clinic View；不能把本阶段描述成
+整个主窗口重构完毕。
 
 当前宿主策略：展示版只以 Maya 2025 + PySide6 为开发和验收基线。先把一个版本的
 视觉完成度、动态交互和可靠性做深，不并行维护 Maya 2024/PySide2；核心数据与算法

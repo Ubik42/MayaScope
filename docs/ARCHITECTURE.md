@@ -3,8 +3,9 @@
 MayaScope 采用“宿主无关调查内核 + 薄 Maya 边界 + 状态驱动 PySide 视图”的目标架构。当前实现已经
 拥有较清晰的 Model、Analysis、Collector、Action、Runner 和 Storage，但历史快速开发让
 历史版本的 `ui/workspace.py` 同时承担视图、呈现状态、后台任务和业务编排。当前已经抽出
-Presentation State、后台 Worker、UI Foundation 与 Scene Atlas View，但主窗口仍承担多个业务工作区
-的装配和控制器逻辑。本文件记录当前真实边界与渐进迁移顺序；它不是已经完成重构的声明。
+Presentation State、核心 Investigation Coordinator、后台 Worker、UI Foundation 与 Scene Atlas View，
+但主窗口仍承担 Runtime、Profiler、项目门禁等工作区的装配和控制器逻辑。本文件记录当前真实边界
+与渐进迁移顺序；它不是已经完成重构的声明。
 
 ## 依赖方向
 
@@ -66,6 +67,20 @@ Presentation State 不要求视图逐字段猜测失效关系，而是提供语�
 `_presentation`，保证可以小步迁移现有 5000 多行视图代码。新增代码应直接使用语义转换，不再添加
 新的平行状态字段。兼容属性将在各工作区拆分完成后删除。
 
+## Investigation Coordinator
+
+`application.InvestigationCoordinator` 是不导入 Maya、PySide 或 QWidget 的应用编排层，当前负责：
+
+- 接收 Scene/Clinic 异步结果前验证 `snapshot_id`、Issue、Incident 与节点身份，拒绝旧场景结果；
+- 在同一场景代中原子生成 Presentation State、Scene Delta 和宿主选择身份索引；
+- 把 Maya 单选、多选、清空与无法映射区分为明确决策，歧义短名称不猜测；
+- 统一计算结构/实测 Root Cause Lens，并拒绝旧候选进入新 Lens；
+- 输出 `AtlasSceneIntent`、`AtlasHighlightIntent`、`AtlasLensIntent` 等类型化渲染意图。
+
+`ui/investigation_renderer.py` 只把这些意图分派给真实 `SpectralAtlasView`。它不决定规则、身份、
+Lens 方向或状态失效关系。这样普通 Python 能证明业务转换，PySide 测试只需要证明意图正确落到
+生产 Atlas，而不需要复制一套界面。
+
 ## Qt Worker 边界
 
 Clinic、Crash Bisect 与项目审计队列的 QObject Worker 已移到 `ui/workers.py`。Worker 只负责：
@@ -94,9 +109,9 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 后续拆分顺序
 
-1. 继续把 Atlas 控制器从主窗口迁到显式 Coordinator；当前只完成 View 边界；
-2. 按 Clinic、Lens、Profiler、Runtime、Project Gate、Regression、Bisect 拆分视图模块；
-3. 建立 Application Coordinator，统一捕获、诊所、性能和项目任务的状态机；
+1. 将 Scene Clinic 的 Rule Array、Issue/Incident Rail 与证据格式化迁出主窗口；
+2. 继续扩展 Coordinator 到 Profiler、Runtime 与 Counterfactual 的代次/取消状态；
+3. 按 Lens、Profiler、Runtime、Project Gate、Regression、Bisect 拆分其余视图模块；
 4. 将当前主窗口内的完整 QSS 提取为可版本化主题表面，并保留真实截图差异验收；
 5. 逐步移除 `_presentation_field` 兼容属性，让视图通过显式 render/state transition 工作；
 6. 为每个工作区保留普通 Python 状态测试、离屏中文视觉测试与真实 Maya 生命周期测试。
@@ -106,13 +121,16 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 当前验证证据
 
-- 普通 Python：196 项通过，19 项仅宿主环境测试按预期跳过；
+- 普通 Python：208 项通过，19 项仅宿主环境测试按预期跳过；
 - Presentation State：新场景代际失效、选择互斥、Lens、Profiler、Runtime、Delta 与字段拼写保护；
 - UI Foundation：稳定命名色板、Qt6 分组枚举和拼写拒绝；
 - Scene Atlas：节点/边物化、240 节点预算、异常节点优先、选择不回声和动效定时器边界；
-- 真实 Maya 2025：PID 35408，19.815 秒自行退出；
+- Investigation Coordinator：旧 Clinic/Issue/Incident/Candidate 拒绝、同代 Delta、单选/多选/清空、
+  歧义身份和 Lens/Profiler/反事实恢复意图；
+- 真实 Maya 2025：PID 49348，20.530 秒自行退出；
 - 生命周期：首次启动、重复启动、开发热重载、唯一可见工作区、选择回调和菜单卸载通过；
-- 清理：9 个活动计时器归零，残留可见工作区为 0。
+- 清理：10 个活动计时器归零，残留可见工作区为 0。
 
-`ui/workspace.py` 已从 5414 行降到 4835 行。该证据证明 Foundation 与 Atlas View 迁移没有改变
-已覆盖行为，不证明主窗口控制器或其余业务工作区已经完成拆分。
+`ui/workspace.py` 当前 4856 行；比上一阶段多 21 行，是显式 Transition→View 桥和错误反馈，不是
+业务逻辑回流。408 行宿主无关协调逻辑与 42 行渲染适配已形成独立边界。该证据仍不证明其余业务
+工作区已经完成拆分。
