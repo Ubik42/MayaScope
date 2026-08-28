@@ -118,7 +118,8 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
   Lens/Delta/Pulse/反事实覆盖和选择回声抑制；它不导入 Maya Collector 或主窗口；
 - `ui/profiler.py` 独立拥有真实事件地平线、时间窗拖选、采样/反事实/清除动作和自己的动效计时器；
 - `ui/runtime.py` 独立拥有表达式、scriptJob、插件与回调四轨动态星图；
-- 回归、项目门禁和 Failure Prism 仍在主窗口中使用 QWidget + QPainter；
+- Failure Prism 已迁入 `ui/bisect.py`，中文结果映射位于宿主无关 `presentation/bisect.py`；
+- 回归裂隙仍在主窗口中使用 QWidget + QPainter；项目门禁已位于独立视图模块；
 - QTimer 只驱动绘制 phase、去抖和分片捕获；
 - 耗时纯数据分析使用 QThread Worker；
 - Maya 场景 API 与 QWidget 更新留在对应的安全线程边界；
@@ -126,8 +127,8 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 后续拆分顺序
 
-1. 将 Runtime 分片采集会话与控件锁定/取消恢复迁入显式 Application 用例；
-2. 按 Lens、Project Gate、Regression、Bisect 拆分其余视图模块；
+1. 将剩余批处理/故障编排逐步迁入显式 Application 用例；
+2. 拆分 Regression 视图与 Presenter；Lens、Project Gate、Bisect 已完成独立边界；
 3. 将当前主窗口内的完整 QSS 提取为可版本化主题表面，并保留真实截图差异验收；
 4. 逐步移除 `_presentation_field` 兼容属性，让视图通过显式 render/state transition 工作；
 5. 为每个工作区保留普通 Python 状态测试、离屏中文视觉测试与真实 Maya 生命周期测试。
@@ -137,7 +138,7 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 当前验证证据
 
-- 普通 Python：229 项通过，19 项仅宿主环境测试按预期跳过；
+- 普通 Python：281 项通过，19 项仅宿主环境测试按预期跳过；
 - Presentation State：新场景代际失效、选择互斥、Lens、Profiler、Runtime、Delta 与字段拼写保护；
 - UI Foundation：稳定命名色板、Qt6 分组枚举和拼写拒绝；
 - Scene Atlas：节点/边物化、240 节点预算、异常节点优先、选择不回声和动效定时器边界；
@@ -146,14 +147,17 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 - Profiler/Runtime View：中文清除动作、窄宽按钮几何、计时器归属、真实报告形状和源码依赖边界；
 - Clinic/Evidence：等待、空规则、故障隔离、Issue/Incident、ChangePlan 状态、卡片生命周期、紧凑宽度
   与中文源码扫描均有独立契约；
+- Failure Prism：开始、探针、取消、完成、部分收敛与失败由纯 Presenter 转换；独立 View 保留原有
+  动态钻石轨迹、中文控制和 reduced-motion 计时器边界；
 - 真实 Maya 2025 仪器宽屏：PID 44988，584 个 Profiler 事件，22.440 秒自行退出；
 - 真实 Maya 2025 仪器窄屏：800 × 900，PID 15124，865 个 Profiler 事件，22.984 秒自行退出；
 - 干净 Release 安装：PID 25748 只从临时 Module 导入，18.623 秒自行退出并完成最终卸载；
 - 生命周期：首次启动、重复启动、开发热重载、唯一可见工作区、选择回调和菜单卸载通过；
 - 清理：9 个活动计时器归零，残留可见工作区为 0。
 
-`ui/workspace.py` 当前 3937 行；独立 `ui/profiler.py` 为 254 行，`ui/runtime.py` 为 155 行，
+`ui/workspace.py` 当前 3209 行；独立 `ui/profiler.py` 为 254 行，`ui/runtime.py` 为 155 行，
 `ui/clinic.py` 为 715 行，宿主无关
-`presentation/evidence.py` 为 140 行。主窗口已不再直接拥有 `issue_heading`、`evidence`、
-`plan_button`、Issue 卡片列表、Clinic、Profiler 或 Runtime View 定义；其他业务工作区仍待迁移。该证据
+`presentation/evidence.py` 为 140 行，`ui/bisect.py` 为 222 行，`presentation/bisect.py` 为 119 行。
+主窗口已不再直接拥有 `issue_heading`、`evidence`、`plan_button`、Issue 卡片列表、Clinic、Profiler、
+Runtime 或 Failure Prism View 定义；其他业务工作区仍待迁移。该证据
 不能被解释成整个主窗口已经完成拆分。

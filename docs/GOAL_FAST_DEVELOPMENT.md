@@ -636,3 +636,20 @@ Atlas 大图增量布局和渲染预算做下一条真实制作纵切；不继�
 
 整个 `/goal` 继续保持 active；下一阶段继续审计安装失败后的结构化回执，或在不抢焦点条件下补做
 最新 Release ZIP 的真实 Maya 干净安装回放。
+
+## 第四十四里程碑进度（完成：Failure Prism Presenter / View 边界）
+
+1. 新增宿主无关 `presentation.bisect`，以不可变状态统一开始、单次探针、安全取消、完整隔离、部分
+   收敛和失败文案；不导入 Maya、Qt、Collector 或 Workspace。
+2. 原有动态钻石轨迹和中文控制迁入 `ui/bisect.py`，继续使用同一 QPainter 视觉、信号和 40 ms
+   动效节奏；reduced-motion 会停止视图自己的计时器。
+3. View 只渲染 Presenter 状态，不再直接解释 isolation mode、stage、outcome、Capsule 和恢复按钮。
+4. Workspace 仍负责后台 BisectWorker、进程所有权、取消和关闭清理；本轮没有改动已验证的 Runner、
+   ddmin、Journal 或 Capsule 执行语义。
+5. `ui/workspace.py` 从 3444 行降至 3209 行；新增 `ui/bisect.py` 222 行、
+   `presentation/bisect.py` 119 行。这是单一业务边界迁移，不冒充主窗口重构完成。
+6. 新增 4 项 Presenter/View/依赖方向回归；普通 Python 281 项通过（19 项宿主限定跳过）。本轮不改
+   UI 视觉、不启动真实 Maya，沿用既有 Failure Prism 宿主视觉证据。
+
+整个 `/goal` 继续保持 active；下一阶段优先拆分 Regression Rift 的 Presenter/View，或审计项目队列
+与 Bisect 的剩余 Application 编排，以实际耦合风险决定，不扩张新功能面。

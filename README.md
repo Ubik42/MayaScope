@@ -79,6 +79,9 @@ Issue/Incident 卡片、因果证据和操作状态全部封装在 `ui/clinic.py
 Profiler 地平线与 Runtime 星图分别位于 `ui/profiler.py`、`ui/runtime.py`，继续复用生产 QPainter
 视觉；“清除采样”会同步失效实测 Lens 与反事实结果、保留仍有效的 Runtime/Delta 证据，并明确保证
 不修改 Maya 场景。Atlas 覆盖恢复顺序由 Coordinator 决定，不再由关闭按钮各自猜测。
+Failure Prism 同样不再定义在主窗口：`presentation/bisect.py` 产生开始、探针、取消、部分收敛、完成
+与失败的不可变中文状态，`ui/bisect.py` 只负责真实 QPainter 轨迹和按钮呈现。主窗口保留后台进程
+生命周期编排，不让 QWidget 自己解释 Crash Bisect 领域结果。
 
 ## 启动新版调查工作区
 

@@ -27,6 +27,14 @@ from .atlas_window import (
     build_atlas_window,
     diff_atlas_windows,
 )
+from .bisect import (
+    BisectPrismState,
+    begin_bisect_prism,
+    fail_bisect_prism,
+    finish_bisect_prism,
+    present_bisect_attempt,
+    request_bisect_cancel,
+)
 
 __all__ = [
     "ClinicEvidencePresenter",
@@ -51,4 +59,10 @@ __all__ = [
     "AtlasWindowPlan",
     "build_atlas_window",
     "diff_atlas_windows",
+    "BisectPrismState",
+    "begin_bisect_prism",
+    "fail_bisect_prism",
+    "finish_bisect_prism",
+    "present_bisect_attempt",
+    "request_bisect_cancel",
 ]
