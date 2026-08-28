@@ -7,7 +7,9 @@ orchestration stay outside this module.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
+import time
 from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 from ..analysis.counterfactual import CounterfactualReport
@@ -17,11 +19,33 @@ from ..analysis.lens import RootCauseCandidate, RootCauseReport
 from ..analysis.pulse import PulseNodeStat
 from ..analysis.rules import Issue
 from ..model import SceneNode, SceneSnapshot
+from ..presentation.atlas_window import (
+    AtlasEdgeKey,
+    AtlasWindowPlan,
+    build_atlas_window,
+    diff_atlas_windows,
+)
 from ..qt_compat import QtCore, QtGui, QtWidgets
 from .foundation import COLORS, qt_enum
 
 
 MAX_RENDER_NODES = 240
+MAX_RENDER_EDGES = 960
+LARGE_SCENE_THRESHOLD = 1000
+LARGE_SCENE_RENDER_NODES = 120
+LARGE_SCENE_RENDER_EDGES = 480
+
+
+@dataclass(frozen=True)
+class AtlasApplyStats:
+    total_nodes: int
+    total_edges: int
+    visible_nodes: int
+    visible_edges: int
+    reused_nodes: int
+    reused_edges: int
+    elapsed_ms: float
+    camera_preserved: bool
 
 
 class AtlasNodeItem(QtWidgets.QGraphicsObject):
@@ -36,12 +60,42 @@ class AtlasNodeItem(QtWidgets.QGraphicsObject):
         self._role = "normal"
         self.setAcceptHoverEvents(True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
-        self.setToolTip("%s\n%s\n%s" % (node.name, node.type_name, node.dag_paths[0] if node.dag_paths else node.id))
+        self._refresh_tooltip()
+        self._shadow_effect = None
+        self._install_shadow_effect()
+
+    def _install_shadow_effect(self):
         shadow = QtWidgets.QGraphicsDropShadowEffect()
         shadow.setBlurRadius(22)
         shadow.setOffset(0, 4)
         shadow.setColor(QtGui.QColor(132, 55, 255, 115))
+        self._shadow_effect = shadow
         self.setGraphicsEffect(shadow)
+
+    def _refresh_tooltip(self):
+        self.setToolTip(
+            "%s\n%s\n%s"
+            % (
+                self.node.name,
+                self.node.type_name,
+                self.node.dag_paths[0] if self.node.dag_paths else self.node.id,
+            )
+        )
+
+    def set_node(self, node: SceneNode, degree: int):
+        if self.node == node and self.degree == degree:
+            return
+        self.node = node
+        self.degree = degree
+        self._refresh_tooltip()
+        self.update()
+
+    def set_glow_enabled(self, enabled: bool):
+        if enabled and self._shadow_effect is None:
+            self._install_shadow_effect()
+        elif not enabled and self._shadow_effect is not None:
+            self.setGraphicsEffect(None)
+            self._shadow_effect = None
 
     def boundingRect(self):
         return QtCore.QRectF(-self.WIDTH / 2, -self.HEIGHT / 2, self.WIDTH, self.HEIGHT)
@@ -155,13 +209,16 @@ class AtlasNodeItem(QtWidgets.QGraphicsObject):
 
 
 class AtlasEdgeItem(QtWidgets.QGraphicsPathItem):
-    def __init__(self, source: AtlasNodeItem, target: AtlasNodeItem, relation: str):
+    def __init__(self, source: AtlasNodeItem, target: AtlasNodeItem, identity: AtlasEdgeKey):
         super().__init__()
         self.source, self.target = source, target
-        self.relation = relation
+        self.identity = identity
+        self.relation = identity.relation
         self._tracing = False
-        self._base_color = QtGui.QColor(COLORS["violet"] if relation == "dg" else COLORS["cyan"])
-        self._base_color.setAlpha(78 if relation == "dg" else 48)
+        self._base_color = QtGui.QColor(
+            COLORS["violet"] if self.relation == "dg" else COLORS["cyan"]
+        )
+        self._base_color.setAlpha(78 if self.relation == "dg" else 48)
         self.setPen(QtGui.QPen(self._base_color, 1.0))
         self.setZValue(-2)
         self.refresh()
@@ -211,13 +268,15 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
         self.setHorizontalScrollBarPolicy(qt_enum(QtCore.Qt, "ScrollBarAlwaysOff"))
         self.setVerticalScrollBarPolicy(qt_enum(QtCore.Qt, "ScrollBarAlwaysOff"))
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
-        self.setViewportUpdateMode(QtWidgets.QGraphicsView.FullViewportUpdate)
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.MinimalViewportUpdate)
         self._phase = 0.0
         self._node_items: Dict[str, AtlasNodeItem] = {}
-        self._edge_items = []
+        self._edge_items: Dict[AtlasEdgeKey, AtlasEdgeItem] = {}
         self._snapshot: Optional[SceneSnapshot] = None
         self._graph = None
         self._ranked_node_ids: Tuple[str, ...] = ()
+        self._window_plan: Optional[AtlasWindowPlan] = None
+        self._last_apply_stats: Optional[AtlasApplyStats] = None
         self._lens_positions: Dict[str, QtCore.QPointF] = {}
         self._suppress_selection_signal = False
         self._timer = QtCore.QTimer(self)
@@ -241,9 +300,43 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
 
     def _tick(self):
         self._phase = (self._phase + 0.018) % 1.0
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.animate_trace(self._phase)
         self.viewport().update()
+
+    @property
+    def last_apply_stats(self) -> Optional[AtlasApplyStats]:
+        return self._last_apply_stats
+
+    def drawForeground(self, painter, rect):
+        super().drawForeground(painter, rect)
+        stats = self._last_apply_stats
+        if stats is None:
+            return
+        painter.save()
+        painter.resetTransform()
+        panel = QtCore.QRectF(18.0, 18.0, 286.0, 54.0)
+        painter.setPen(QtGui.QPen(QtGui.QColor(82, 226, 255, 105), 1.0))
+        painter.setBrush(QtGui.QColor(7, 7, 15, 218))
+        painter.drawRoundedRect(panel, 8.0, 8.0)
+        painter.setPen(COLORS["cyan"])
+        painter.drawText(
+            QtCore.QRectF(30.0, 25.0, 155.0, 18.0),
+            "语义窗 %s / %s" % (stats.visible_nodes, stats.total_nodes),
+        )
+        painter.setPen(COLORS["acid"] if stats.camera_preserved else COLORS["orange"])
+        painter.drawText(
+            QtCore.QRectF(190.0, 25.0, 100.0, 18.0),
+            qt_enum(QtCore.Qt, "AlignRight"),
+            "视角保持" if stats.camera_preserved else "视角重置",
+        )
+        painter.setPen(COLORS["muted"])
+        painter.drawText(
+            QtCore.QRectF(30.0, 46.0, 258.0, 17.0),
+            "重用 %s 节点 · %s 连线 · 换窗 %.1f ms"
+            % (stats.reused_nodes, stats.reused_edges, stats.elapsed_ms),
+        )
+        painter.restore()
 
     def drawBackground(self, painter, rect):
         gradient = QtGui.QRadialGradient(rect.center(), max(rect.width(), rect.height()) * 0.68)
@@ -282,10 +375,11 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
         priority_node_ids: Iterable[str] = (),
     ):
         priority_node_ids = tuple(priority_node_ids)
-        if self._snapshot is not snapshot:
-            self.scene().clear()
-            self._node_items.clear()
-            self._edge_items = []
+        previous_snapshot = self._snapshot
+        reset_view = previous_snapshot is None or (
+            previous_snapshot.source_scene != snapshot.source_scene
+        )
+        if previous_snapshot is not snapshot:
             self._lens_positions.clear()
         self._snapshot = snapshot
         self._graph = get_graph_index(snapshot, ("dg", "dag"))
@@ -297,57 +391,90 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
                 for node_id in issue.affected_node_ids
             )
         )
-        self._materialize(priority_node_ids + affected)
+        self._materialize(priority_node_ids + affected, reset_view=reset_view)
 
-    def _materialize(self, priority_node_ids: Iterable[str] = ()):
+    def _materialize(
+        self,
+        priority_node_ids: Iterable[str] = (),
+        *,
+        reset_view: bool = False,
+    ):
         if not self._snapshot or self._graph is None:
             return
-        node_map = self._snapshot.node_map
-        requested = []
-        seen = set()
-        for node_id in tuple(priority_node_ids) + self._ranked_node_ids:
-            if node_id in node_map and node_id not in seen:
-                seen.add(node_id)
-                requested.append(node_id)
-                if len(requested) >= MAX_RENDER_NODES:
-                    break
-        visible_ids = set(requested)
-        for edge_item in self._edge_items:
-            self.scene().removeItem(edge_item)
-        self._edge_items = []
-        for node_id in tuple(self._node_items):
-            if node_id not in visible_ids:
+        started = time.perf_counter()
+        old_center = self.mapToScene(self.viewport().rect().center())
+        old_transform = QtGui.QTransform(self.transform())
+        large_scene = len(self._snapshot.nodes) >= LARGE_SCENE_THRESHOLD
+        plan = build_atlas_window(
+            self._snapshot,
+            self._graph,
+            self._ranked_node_ids,
+            priority_node_ids,
+            limit=LARGE_SCENE_RENDER_NODES if large_scene else MAX_RENDER_NODES,
+            edge_limit=LARGE_SCENE_RENDER_EDGES if large_scene else MAX_RENDER_EDGES,
+        )
+        diff = diff_atlas_windows(self._window_plan, plan)
+
+        for edge_key in diff.removed_edges:
+            edge_item = self._edge_items.pop(edge_key, None)
+            if edge_item is not None:
+                self.scene().removeItem(edge_item)
+        for node_id in diff.removed_node_ids:
+            if node_id in self._node_items:
                 item = self._node_items.pop(node_id)
                 self.scene().removeItem(item)
                 item.deleteLater()
 
-        # Concentric topology: high-flux and problematic nodes form the investigative core.
-        for index, node_id in enumerate(requested):
-            node = node_map[node_id]
-            ring = int(math.sqrt(index / 10.0))
-            radius = 65 + ring * 190
-            items_in_ring = max(10, int(2 * math.pi * radius / 185))
-            angle = (index % items_in_ring) / float(items_in_ring) * math.tau + ring * 0.43
+        dense_window = large_scene or len(plan.placements) >= 180
+        for placement_index, placement in enumerate(plan.placements):
+            node_id = placement.node_id
+            node = self._snapshot.nodes[self._graph.id_to_index[node_id]]
             item = self._node_items.get(node_id)
             if item is None:
                 item = AtlasNodeItem(node, self._graph.degree(node.id))
                 self.scene().addItem(item)
                 self._node_items[node.id] = item
-            item.setPos(math.cos(angle) * radius, math.sin(angle) * radius)
+            else:
+                item.set_node(node, self._graph.degree(node.id))
+            item.set_glow_enabled(not dense_window)
+            item.setPos(placement.x, placement.y)
+            if self._lens_positions and node_id not in self._lens_positions:
+                self._lens_positions[node_id] = QtCore.QPointF(placement.x, placement.y)
 
-        for source_id in requested:
-            for target_id in self._graph.forward[source_id]:
-                if target_id not in visible_ids:
-                    continue
-                for edge in self._graph.edges_between(source_id, target_id):
-                    item = AtlasEdgeItem(
-                        self._node_items[source_id], self._node_items[target_id], edge.relation
-                    )
-                    self.scene().addItem(item)
-                    self._edge_items.append(item)
+        for edge_key in diff.added_edges:
+            item = AtlasEdgeItem(
+                self._node_items[edge_key.source_id],
+                self._node_items[edge_key.target_id],
+                edge_key,
+            )
+            self.scene().addItem(item)
+            self._edge_items[edge_key] = item
+        moved = set(diff.moved_node_ids) | set(diff.added_node_ids)
+        if moved:
+            for edge in self._edge_items.values():
+                if edge.key[0] in moved or edge.key[1] in moved:
+                    edge.refresh()
         bounds = self.scene().itemsBoundingRect().adjusted(-130, -130, 130, 130)
         self.scene().setSceneRect(bounds)
-        self.fitInView(bounds, qt_enum(QtCore.Qt, "KeepAspectRatio"))
+        if reset_view:
+            self.fitInView(bounds, qt_enum(QtCore.Qt, "KeepAspectRatio"))
+        else:
+            self.setTransform(old_transform)
+            self.centerOn(old_center)
+        self._window_plan = plan
+        self._last_apply_stats = AtlasApplyStats(
+            total_nodes=plan.total_node_count,
+            total_edges=plan.total_edge_count,
+            visible_nodes=len(plan.placements),
+            visible_edges=len(plan.edges),
+            reused_nodes=len(diff.retained_node_ids),
+            reused_edges=len(diff.retained_edges),
+            elapsed_ms=(time.perf_counter() - started) * 1000.0,
+            camera_preserved=not reset_view,
+        )
+        if self._timer.isActive():
+            self._timer.setInterval(180 if large_scene else 82 if len(plan.placements) >= 180 else 48)
+        self.viewport().update(QtCore.QRect(14, 14, 296, 64))
 
     def _ensure_materialized(self, node_ids: Iterable[str]):
         requested = tuple(dict.fromkeys(node_ids))[:MAX_RENDER_NODES]
@@ -362,7 +489,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.set_heat(0.0)
             item.set_hot(node_id in selected)
             item.setOpacity(1.0 if not selected or node_id in selected else 0.22)
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.set_trace(False, edge.key[0] in selected and edge.key[1] in selected)
         visible = [self._node_items[node_id] for node_id in selected if node_id in self._node_items]
         if visible:
@@ -402,7 +529,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
                         direction * distance * 210.0,
                         index * 105.0 - y_offset,
                     )
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.refresh()
         scope = set(report.scope_node_ids)
         candidate_ids = {item.node_id for item in report.candidates}
@@ -425,7 +552,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.set_hot(False)
             item.set_role(role)
             item.setOpacity(1.0 if node_id in scope else 0.07)
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.set_trace(edge.key in trace_edges, edge.key[0] in scope and edge.key[1] in scope)
         visible_ids = set(report.scope_node_ids)
         visible = [self._node_items[node_id] for node_id in visible_ids if node_id in self._node_items]
@@ -445,7 +572,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             if item is not None:
                 item.setPos(position)
         self._lens_positions.clear()
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.refresh()
         self.scene().setSceneRect(
             self.scene().itemsBoundingRect().adjusted(-130, -130, 130, 130)
@@ -455,7 +582,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.set_hot(False)
             item.set_heat(0.0)
             item.setOpacity(1.0)
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.set_trace(False, True)
 
     def show_delta(self, delta: SceneDelta):
@@ -501,7 +628,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.set_role(role)
             item.set_hot(False)
             item.setOpacity(1.0 if node_id in changed else 0.09)
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.set_trace(edge.key in added_edges, edge.key[0] in changed or edge.key[1] in changed)
         visible = [self._node_items[node_id] for node_id in changed if node_id in self._node_items]
         if visible:
@@ -524,7 +651,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.set_hot(intensity > 0.72)
             item.setOpacity(0.18 + 0.82 * math.sqrt(intensity) if intensity else 0.07)
         active = set(heat)
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.set_trace(False, edge.key[0] in active and edge.key[1] in active)
 
     def show_counterfactual(self, report: CounterfactualReport):
@@ -543,7 +670,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.set_heat(intensity)
             item.set_hot(node_id == report.target_node_id)
             item.setOpacity(0.2 + 0.8 * math.sqrt(intensity) if intensity else 0.06)
-        for edge in self._edge_items:
+        for edge in self._edge_items.values():
             edge.set_trace(False, edge.key[0] in active and edge.key[1] in active)
         target = self._node_items.get(report.target_node_id)
         if target:
@@ -582,10 +709,28 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
         if selected and isinstance(selected[0], AtlasNodeItem):
             self.nodeActivated.emit(selected[0].node.id)
 
+    def clear_snapshot(self):
+        """Release all graphics and semantic-window state without leaking internals."""
+        self.scene().clear()
+        self._node_items.clear()
+        self._edge_items.clear()
+        self._snapshot = None
+        self._graph = None
+        self._ranked_node_ids = ()
+        self._window_plan = None
+        self._last_apply_stats = None
+        self._lens_positions.clear()
+        self.viewport().update()
+
 
 __all__ = [
+    "AtlasApplyStats",
     "AtlasEdgeItem",
     "AtlasNodeItem",
+    "MAX_RENDER_EDGES",
+    "LARGE_SCENE_RENDER_EDGES",
+    "LARGE_SCENE_RENDER_NODES",
+    "LARGE_SCENE_THRESHOLD",
     "MAX_RENDER_NODES",
     "SpectralAtlasView",
 ]

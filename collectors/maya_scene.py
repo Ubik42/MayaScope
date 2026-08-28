@@ -470,6 +470,39 @@ def _host_context_signature(om: Any, cmds: Any):
     )
 
 
+def _host_context_changes(before, after) -> Tuple[str, ...]:
+    labels = (
+        "场景设置",
+        "场景生命周期",
+        "插件清单",
+        "缺失插件清单",
+        "外部文件清单",
+    )
+    changes = list(
+        label for label, old, current in zip(labels, before, after) if old != current
+    )
+    if before[1] != after[1]:
+        lifecycle_fields = (
+            "modified",
+            "file_type",
+            "workspace_root",
+            "current_time",
+            "playback_min",
+            "playback_max",
+            "animation_start",
+            "animation_end",
+        )
+        changed_fields = tuple(
+            field
+            for field in lifecycle_fields
+            if getattr(before[1], field) != getattr(after[1], field)
+        )
+        changes[changes.index("场景生命周期")] = "场景生命周期.%s" % "/".join(
+            changed_fields
+        )
+    return tuple(changes)
+
+
 def _namespace(name: str) -> str:
     leaf = name.rsplit("|", 1)[-1]
     return leaf.rsplit(":", 1)[0] if ":" in leaf else ""
@@ -606,9 +639,10 @@ class MayaSceneCaptureSession:
         referenced = bool(_safe(lambda: fn.isFromReferencedFile, False))
         reference_node = _reference_node(self.cmds, name, referenced)
         paths = _dag_paths(self.om, obj)
-        locked = bool(
-            _safe(lambda: self.cmds.lockNode(name, query=True, lock=True)[0], False)
-        )
+        # MFnDependencyNode already owns the lock bit. Crossing through cmds for
+        # every node turns a time-sliced capture into an N-command bottleneck on
+        # real production scenes (1,200 nodes measured >99 s in Maya 2025).
+        locked = bool(_safe(lambda: fn.isLocked, False))
         type_name = str(fn.typeName)
         metadata = {"locked": locked, "reference_node": reference_node}
         if type_name in {"unknown", "unknownDag", "unknownTransform"}:
@@ -717,10 +751,15 @@ class MayaSceneCaptureSession:
 
     def _finalize(self) -> None:
         self._check_guard()
-        if _host_context_signature(self.om, self.cmds) != self._initial_host_context:
+        final_host_context = _host_context_signature(self.om, self.cmds)
+        if final_host_context != self._initial_host_context:
             self._remove_mutation_guards()
+            changed = _host_context_changes(
+                self._initial_host_context, final_host_context
+            )
             raise SceneChangedDuringCapture(
-                "采集期间场景设置、工作区、插件、时间范围或外部文件路径发生变化；请在场景稳定后重试"
+                "采集期间%s发生变化；本次部分快照未提交，请在场景稳定后重试"
+                % "、".join(changed or ("宿主上下文",))
             )
         plugins = tuple(
             _safe(lambda: self.cmds.pluginInfo(query=True, pluginsInUse=True), ()) or ()

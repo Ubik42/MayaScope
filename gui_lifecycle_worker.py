@@ -26,7 +26,7 @@ def _atomic_json(path: Path, payload) -> None:
 
 
 def schedule() -> None:
-    from PySide6 import QtCore, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets
     from maya import cmds
 
     class Probe(QtCore.QObject):
@@ -40,6 +40,8 @@ def schedule() -> None:
             self.scenario = os.environ.get(
                 "MAYASCOPE_GUI_LIFECYCLE_SCENARIO", "default"
             )
+            if self.scenario == "atlas-scale":
+                self.deadline = self.started + 100.0
             self.window_size = (
                 int(os.environ.get("MAYASCOPE_GUI_LIFECYCLE_WIDTH", "1480")),
                 int(os.environ.get("MAYASCOPE_GUI_LIFECYCLE_HEIGHT", "900")),
@@ -50,6 +52,18 @@ def schedule() -> None:
 
         def later(self, callback, milliseconds=250):
             QtCore.QTimer.singleShot(milliseconds, lambda: self.guard(callback))
+
+        def mark_stage(self, name):
+            if self.scenario == "atlas-scale":
+                stage_check = self.checks.setdefault(
+                    "大场景阶段", {"通过": True, "记录": []}
+                )
+                stage_check["记录"].append(
+                    {
+                        "阶段": name,
+                        "累计秒": round(time.perf_counter() - self.started, 3),
+                    }
+                )
 
         def guard(self, callback):
             try:
@@ -77,6 +91,31 @@ def schedule() -> None:
             )
 
         def wait_ready(self, window, callback):
+            if self.scenario == "atlas-scale":
+                dialogs = tuple(
+                    widget
+                    for widget in QtWidgets.QApplication.allWidgets()
+                    if isinstance(widget, QtWidgets.QMessageBox) and widget.isVisible()
+                )
+                if dialogs:
+                    messages = tuple(dialog.text() for dialog in dialogs)
+                    for dialog in dialogs:
+                        dialog.close()
+                    raise RuntimeError(
+                        "大场景首次捕获弹出错误：%s" % " | ".join(messages)
+                    )
+                session = getattr(window._scene_capture, "_session", None) if window else None
+                progress = session.progress() if session is not None else None
+                self.checks["大场景等待"] = {
+                    "累计秒": round(time.perf_counter() - self.started, 3),
+                    "窗口可见": bool(window and window.isVisible()),
+                    "已有快照": bool(window and window._snapshot is not None),
+                    "捕获进行中": bool(window and window._scene_capture.active),
+                    "诊所进行中": bool(window and window._clinic_thread is not None),
+                    "捕获阶段": progress.stage if progress else "",
+                    "捕获完成项": progress.completed if progress else 0,
+                    "捕获总项": progress.total if progress else 0,
+                }
             if self.ready(window):
                 callback()
             else:
@@ -92,6 +131,24 @@ def schedule() -> None:
                 self.lens_fixture = build_scene(
                     cmds, save_to=self.output.parent / "lens-chain-showcase.ma"
                 )
+            elif self.scenario == "atlas-scale":
+                from MayaScope.examples.generate.atlas_scale_scene import build_scene
+
+                self.mark_stage("开始生成夹具")
+                self.atlas_scale_fixture = build_scene(
+                    self.output.parent / "atlas-scale-showcase.ma"
+                )
+                self.mark_stage("夹具生成完成")
+                cmds.file(
+                    self.atlas_scale_fixture["scene"],
+                    open=True,
+                    force=True,
+                    executeScriptNodes=False,
+                    prompt=False,
+                )
+                cmds.currentTime(1.0, edit=True, update=False)
+                cmds.file(save=True, force=True, type="mayaAscii")
+                self.mark_stage("Maya 打开完成")
 
             self.launch = launch
             self.version = __version__
@@ -105,10 +162,13 @@ def schedule() -> None:
                     "通过": os.path.normcase(self.package_root) == os.path.normcase(expected),
                 }
             self.first = launch.run("workspace")
+            self.mark_stage("工作区入口返回")
             self.first.resize(*self.window_size)
             self.wait_ready(self.first, self.after_first)
 
         def after_first(self):
+            if self.scenario == "atlas-scale":
+                self.checks["大场景等待"]["通过"] = True
             if self.scenario == "instruments":
                 self.prepare_instrument_scenario()
             elif self.scenario == "runtime-cancel":
@@ -119,6 +179,8 @@ def schedule() -> None:
                 self.prepare_project_gate_scenario()
             elif self.scenario == "lens":
                 self.prepare_lens_scenario()
+            elif self.scenario == "atlas-scale":
+                self.prepare_atlas_scale_scenario()
             self.screenshot.parent.mkdir(parents=True, exist_ok=True)
             saved = bool(self.first.grab().save(str(self.screenshot)))
             parent = self.first.parentWidget()
@@ -142,6 +204,9 @@ def schedule() -> None:
                     self.first._selection_bridge and self.first._selection_bridge.active
                 ),
             }
+            if self.scenario == "atlas-scale":
+                self.finish_atlas_scale()
+                return
             if self.scenario == "instruments":
                 self.verify_instrument_clear()
             elif self.scenario == "runtime-cancel":
@@ -413,6 +478,86 @@ def schedule() -> None:
                 "证据带可见": self.first.lens_ribbon.isVisible(),
                 "Maya 修改状态未改变": bool(cmds.file(query=True, modified=True)) == modified_before,
             }
+
+        def prepare_atlas_scale_scenario(self):
+            snapshot = self.first._snapshot
+            atlas = self.first.atlas
+            ranked = atlas._ranked_node_ids
+            folded_id = next(
+                (node_id for node_id in reversed(ranked) if node_id not in atlas._node_items),
+                "",
+            )
+            transform_before = atlas.transform().m11()
+            if folded_id:
+                atlas.select_node_ids((folded_id,), center=False)
+            image = QtGui.QImage(
+                max(1, atlas.width()),
+                max(1, atlas.height()),
+                QtGui.QImage.Format.Format_ARGB32,
+            )
+            image.fill(QtGui.QColor("#07070F"))
+            def render_once():
+                painter = QtGui.QPainter(image)
+                started = time.perf_counter()
+                try:
+                    atlas.render(painter)
+                finally:
+                    painter.end()
+                return (time.perf_counter() - started) * 1000.0
+
+            render_once()  # Font, path and style caches are cold on the first evidence frame.
+            render_samples = tuple(render_once() for _index in range(3))
+            render_ms = sorted(render_samples)[1]
+            QtWidgets.QApplication.processEvents()
+            stats = atlas.last_apply_stats
+            self.checks["真实大场景语义窗"] = {
+                "通过": bool(
+                    len(snapshot.nodes) >= int(self.atlas_scale_fixture["nodes"])
+                    and stats
+                    and stats.visible_nodes <= 120
+                    and stats.visible_edges <= 480
+                    and stats.reused_nodes >= 119
+                    and stats.camera_preserved
+                    and folded_id in atlas._node_items
+                    and stats.elapsed_ms < 100.0
+                    and render_ms < 250.0
+                ),
+                "真实快照节点": len(snapshot.nodes),
+                "真实快照连线": len(snapshot.edges),
+                "物化节点": stats.visible_nodes if stats else -1,
+                "物化连线": stats.visible_edges if stats else -1,
+                "复用节点": stats.reused_nodes if stats else -1,
+                "复用连线": stats.reused_edges if stats else -1,
+                "内部换窗毫秒": round(stats.elapsed_ms, 3) if stats else -1,
+                "同宿主生产视图换窗与栅格毫秒": round(render_ms, 3),
+                "同宿主栅格样本毫秒": [round(value, 3) for value in render_samples],
+                "折叠焦点已换入": folded_id in atlas._node_items,
+                "视角保持": bool(
+                    stats
+                    and stats.camera_preserved
+                    and abs(atlas.transform().m11() - transform_before) < 1e-9
+                ),
+                "素材 SHA-256": self.atlas_scale_fixture["sha256"],
+                "Maya 修改状态": bool(cmds.file(query=True, modified=True)),
+            }
+
+        def finish_atlas_scale(self):
+            bridge = self.first._selection_bridge
+            active_before = sum(
+                timer.isActive() for timer in self.first.findChildren(QtCore.QTimer)
+            )
+            self.launch.close_all()
+            active_after = sum(
+                timer.isActive() for timer in self.first.findChildren(QtCore.QTimer)
+            )
+            self.checks["关闭与资源释放"] = {
+                "关闭前活动计时器": active_before,
+                "关闭后活动计时器": active_after,
+                "选择回调已移除": not bool(bridge and bridge.active),
+                "窗口已隐藏": not self.first.isVisible(),
+                "通过": active_after == 0 and not bool(bridge and bridge.active),
+            }
+            self.later(self.after_close, 500)
 
         def after_second(self):
             self.checks["重复启动清理"].update(

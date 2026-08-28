@@ -79,6 +79,19 @@
       }
     },
     {
+      "path": "generate/atlas_scale_scene.py",
+      "source": "MayaScope 确定性自生成",
+      "license": "CC0-1.0",
+      "maya": "2025",
+      "purpose": "生成千节点扇出网络，验证真实捕获、Atlas 增量语义换窗、图元复用与绘制预算",
+      "expected": {
+        "generated_nodes": 1200,
+        "generated_connections": 4800,
+        "large_window_nodes": 120,
+        "large_window_edges": 480
+      }
+    },
+    {
       "path": "clinic.team.json",
       "source": "MayaScope 自行编写",
       "license": "项目内部开发、测试与作品展示",

@@ -276,11 +276,20 @@ Lens Ribbon 会实时显示 `N / E / ms` 与 `NODE-BUDGET`、`EDGE-BUDGET` 或 `
 `query-kernel-benchmark.json` 保存完整机器证据；这些数字是合成拓扑基准，不冒充真实制作场景
 端到端采集耗时。
 
-Atlas 的 240 节点限制现在是可换页的语义渲染窗口，不再是捕获时永久丢弃低信号节点。Clinic
-在后台同时预计算全关系索引与稳定高流量排名；前台只创建固定数量图元。Lens、Profiler、Delta
-或 Runtime 指向被折叠节点时，会增量复用现有图元并把焦点/路径换入窗口。100,000 节点、
-1,000,000 唯一边的 Maya 2025 离屏基准为前台应用约 63.5 ms、折叠焦点换入约 32.8 ms，
-渲染节点始终不超过 240；完整证据见 `atlas-virtualization-benchmark.json`。
+Atlas 现在使用**增量语义窗口**，不再在每次聚焦时销毁整张图。Clinic 会预计算全关系索引与稳定
+高流量排名；Lens、Profiler、Delta 或 Runtime 指向折叠节点时，图谱复用已有节点、连线和镜头，
+只换入焦点附近的证据。普通场景预算为 240 节点 / 960 边，千节点以上场景自动收紧到 120 / 480；
+完整 Snapshot 和 Query Kernel 不会被裁剪。
+
+![百万连接增量语义窗口](docs/images/atlas-million-window.png)
+
+同版本 Maya 2025 `mayapy` + PySide6 离屏生产视图的 100,000 节点 / 1,000,000 边基准：快照构建
+1.412 s，索引与排名 735 ms，首次应用 80.9 ms，首次绘制 38.5 ms，折叠焦点换窗 55.5 ms，
+换窗后绘制 39.6 ms。另一次真实 Maya 2025 捕获得到 1,254 节点 / 4,809 条连接，捕获约 4.5 s，
+语义换窗约 4.2–5.2 ms，并复用了 239 个节点图元；真实宿主的整视图绘制预算仍需在下一轮对
+新 120 / 480 自适应档位复测，不把离屏成绩冒充 Maya 窗口成绩。
+
+![真实 Maya 2025 大场景捕获](docs/images/atlas-scale-real-maya.png)
 
 重复捕获现在会在 collector 封口前按稳定 ID 对不可变 payload 做精确 reconciliation。完全相同的
 SceneNode、SceneReference 会复用对象；只有节点顺序与完整 Plug/关系 edge tuple 严格一致时才共享

@@ -77,6 +77,59 @@ class SpectralAtlasViewTests(unittest.TestCase):
         self.view.set_motion_enabled(False)
         self.assertFalse(self.view._timer.isActive())
 
+    def test_same_scene_recapture_reuses_graphics_and_preserves_camera(self):
+        self.view.resize(900, 600)
+        first = self._snapshot(12)
+        self.view.set_snapshot(first, ())
+        node_objects = {node_id: id(item) for node_id, item in self.view._node_items.items()}
+        edge_objects = {key: id(item) for key, item in self.view._edge_items.items()}
+        self.view.scale(1.25, 1.25)
+        self.view.centerOn(self.view._node_items["7"])
+        transform = self.view.transform()
+        center = self.view.mapToScene(self.view.viewport().rect().center())
+
+        second = self._snapshot(12)
+        self.view.set_snapshot(second, ())
+
+        self.assertEqual(
+            {node_id: id(item) for node_id, item in self.view._node_items.items()},
+            node_objects,
+        )
+        self.assertEqual(
+            {key: id(item) for key, item in self.view._edge_items.items()},
+            edge_objects,
+        )
+        self.assertAlmostEqual(self.view.transform().m11(), transform.m11(), places=6)
+        next_center = self.view.mapToScene(self.view.viewport().rect().center())
+        self.assertLess(abs(next_center.x() - center.x()), 2.0)
+        self.assertLess(abs(next_center.y() - center.y()), 2.0)
+        stats = self.view.last_apply_stats
+        self.assertTrue(stats.camera_preserved)
+        self.assertEqual(stats.reused_nodes, 12)
+        self.assertEqual(stats.reused_edges, 11)
+
+    def test_folded_focus_swaps_minimal_window_without_camera_reset(self):
+        snapshot = self._snapshot(MAX_RENDER_NODES + 5)
+        self.view.set_snapshot(snapshot, ())
+        before = set(self.view._node_items)
+        scale = self.view.transform().m11()
+        folded = str(MAX_RENDER_NODES + 4)
+        self.view.select_node_ids((folded,), center=False)
+        after = set(self.view._node_items)
+        self.assertEqual(after - before, {folded})
+        self.assertEqual(len(before - after), 1)
+        self.assertAlmostEqual(self.view.transform().m11(), scale, places=6)
+        self.assertTrue(self.view.last_apply_stats.camera_preserved)
+        self.assertGreaterEqual(self.view.last_apply_stats.reused_nodes, MAX_RENDER_NODES - 1)
+
+    def test_clear_snapshot_releases_window_and_telemetry(self):
+        self.view.set_snapshot(self._snapshot(), ())
+        self.view.clear_snapshot()
+        self.assertEqual(self.view._node_items, {})
+        self.assertEqual(self.view._edge_items, {})
+        self.assertIsNone(self.view._window_plan)
+        self.assertIsNone(self.view.last_apply_stats)
+
     def test_lens_turns_selected_causal_path_into_a_readable_lane_and_restores_it(self):
         snapshot = self._snapshot(5)
         self.view.set_snapshot(snapshot, ())

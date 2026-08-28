@@ -166,17 +166,23 @@ Clinic Worker 预热，进程内最多缓存两个不可变快照；长会话如
 
 ## 11. Atlas 语义窗口门槛
 
-Atlas 固定最多物化 240 个节点，但该上限是可换入的渲染预算，不代表分析数据被裁剪。Lens、Delta、
-Profiler 与 Runtime 请求的节点若被折叠，必须增量换入；完整 Snapshot 和 Query Kernel 始终保留。
+Atlas 的普通场景预算为 240 节点 / 960 边，千节点以上自动切换为 120 / 480；该上限只是可换入的
+渲染预算，不代表分析数据被裁剪。Lens、Delta、Profiler 与 Runtime 请求的节点若被折叠，必须
+增量换入并复用现有图元与镜头；完整 Snapshot 和 Query Kernel 始终保留。
 百万规模发布门槛为后台索引+排名 <5 s、前台 Atlas apply <250 ms、语义换窗 <100 ms。
 
 ```powershell
 "C:\Program Files\Autodesk\Maya2025\bin\mayapy.exe" `
-  work\atlas_virtualization_benchmark.py
+  -m MayaScope.examples.benchmarks.atlas_window_benchmark `
+  --nodes 100000 --fanout 10 `
+  --output MayaScope\work\milestone42\atlas-100k-1m.json `
+  --screenshot MayaScope\docs\images\atlas-million-window.png
 ```
 
-报告必须同时证明 `snapshot_edges=1000000`、`rendered_nodes<=240`、
-`folded_focus_materialized=true`，并保留离屏截图。当前本机结果为 2.83 s / 63.5 ms / 32.8 ms。
+报告必须同时证明 `snapshot_edges=1000000`、`rendered_nodes<=120`、
+`folded_focus_materialized=true`，并保留离屏截图。当前 240 / 960 档离屏基线为索引排名 735 ms、
+首次应用 80.9 ms、首次绘制 38.5 ms、折叠换窗 55.5 ms、换窗绘制 39.6 ms。自适应 120 / 480
+档已完成代码与短回归，尚未重跑真实 Maya 整视图绘制门槛，发布检查不得把它标成已通过。
 
 ## 12. 增量捕获与精确失效
 

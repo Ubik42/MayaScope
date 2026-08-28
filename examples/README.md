@@ -57,3 +57,12 @@ python -m MayaScope.examples.generate.project_gate_fixture D:\MayaScopeDemo\项�
 ```powershell
 & "C:\Program Files\Autodesk\Maya2025\bin\mayapy.exe" -m MayaScope.examples.generate.lens_chain_scene D:\MayaScopeDemo\lens-chain.ma
 ```
+
+## Atlas 千节点压力场景
+
+`generate/atlas_scale_scene.py` 确定性生成 1,200 个网络节点和 4,800 条扇出连接，用来验证真实
+Maya 捕获、增量语义换窗、图元复用和绘制预算。素材完全自生成、采用 CC0-1.0，不含第三方资产。
+
+```powershell
+& "C:\Program Files\Autodesk\Maya2025\bin\mayapy.exe" -m MayaScope.examples.generate.atlas_scale_scene D:\MayaScopeDemo\atlas-scale.ma
+```

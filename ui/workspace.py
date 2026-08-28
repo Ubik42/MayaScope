@@ -1721,7 +1721,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.pulse.set_summary(snapshot.summary())
         self.pulse.set_capture(None)
         self._populate_issues()
-        omitted = max(0, len(snapshot.nodes) - MAX_RENDER_NODES)
+        atlas_stats = self.atlas.last_apply_stats
+        rendered_nodes = atlas_stats.visible_nodes if atlas_stats is not None else MAX_RENDER_NODES
+        omitted = max(0, len(snapshot.nodes) - rendered_nodes)
         suffix = " · 已折叠 %s 个低信号节点" % omitted if omitted else ""
         reuse = snapshot.metadata.get("capture_reuse", {})
         reuse_suffix = (
@@ -1881,12 +1883,15 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.critical(self, "场景诊所已停止", str(message))
 
     def _on_clinic_thread_finished(self):
+        clinic_kind = self._clinic_job[0] if self._clinic_job else ""
         self.clinic_array.profile_combo.setEnabled(True)
         for button in self.clinic_array.rule_buttons.values():
             button.setEnabled(True)
         self.clinic_array._sync_run_state()
         self.clinic_array.run_button.setText("扫描快照")
         self.capture_button.setText("捕获场景")
+        if clinic_kind == "capture":
+            self.capture_strip.clear()
         if not self._runtime_capture.active:
             self.capture_button.setEnabled(True)
             self.bisect_button.setEnabled(True)
@@ -2539,9 +2544,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._runtime_timer.stop()
         self._set_motion_enabled(False)
         invalidate_graph_indexes()
-        self.atlas.scene().clear()
-        self.atlas._node_items.clear()
-        self.atlas._edge_items = []
+        self.atlas.clear_snapshot()
         self._presentation = WorkspacePresentationState()
         self._host_identity_index = {}
         self._regression_payload = None

@@ -19,6 +19,14 @@ from .lens import (
     present_lens_candidate,
     present_lens_result,
 )
+from .atlas_window import (
+    AtlasEdgeKey,
+    AtlasNodePlacement,
+    AtlasWindowDiff,
+    AtlasWindowPlan,
+    build_atlas_window,
+    diff_atlas_windows,
+)
 
 __all__ = [
     "ClinicEvidencePresenter",
@@ -37,4 +45,10 @@ __all__ = [
     "LensResultState",
     "present_lens_candidate",
     "present_lens_result",
+    "AtlasEdgeKey",
+    "AtlasNodePlacement",
+    "AtlasWindowDiff",
+    "AtlasWindowPlan",
+    "build_atlas_window",
+    "diff_atlas_windows",
 ]
