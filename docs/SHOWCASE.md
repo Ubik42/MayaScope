@@ -71,15 +71,16 @@ OCIO 配置。示例契约允许 film / 23.976fps、要求 cm / deg / Y-up 和�
 
 ## 项目发布列车演示
 
-使用同一 `examples/clinic.team.json`、Maya 2025 和显式工作区分别审计
-`external-dependency-probe.ma` 与 `scene-contract-probe.ma`，再由 `project_audit build` 生成
-`mayascope-project-audit.json`。两份场景报告和项目包都带可独立复算的 SHA-256；示例项目应显示
-2 个场景、0 个通过、2 个阻断、2 条 Issue 与 4 个原子 Finding。
+运行 `python -m MayaScope.examples.generate.project_gate_fixture D:\MayaScopeDemo\项目门禁`。
+生成器会创建三个轻量 Maya ASCII 2025 场景和三份 Scene Clinic 签名回执，再由生产
+`build_project_audit` 与 `verify_project_audit` 生成、复核 `project-audit-showcase.json`。
+结果必须为 3 个场景、2 个通过、1 个阻断和 2 个原子 Finding；镜头 020 的缓存缺失是唯一阻断项，
+镜头 030 的插件登记漂移只是警告。`fixture-manifest.json` 保存场景、回执校验值与预期结论。
 
-在工作区点击 **项目门禁** 打开该包，底部动态“项目发布列车”出现两个橙色审计舱。点击任意舱，
-问题证据栏应展示场景路径、严重级统计、完整场景签名和项目签名。截图
-`mayascope-project-gate.png` 与结构化回执 `mayascope-project-gate-visual.json` 来自真实
-Maya 2025 + PySide6 离屏运行，不是静态概念图。
+在工作区点击 **项目门禁** 打开该包，底部动态“项目发布列车”出现绿、橙、绿三个审计舱。聚焦
+镜头 020 后，问题证据栏应展示短场景名、严重级统计及场景/项目签名摘要。真实 Maya 2025 截图
+`mayascope-project-gate.png` 和 `mayascope-project-gate-narrow.png` 分别覆盖 1480 × 900 与
+800 × 900；对应 lifecycle JSON 证明双层签名、2/1 结论、modified 状态不变及宿主完整退出。
 
 批量队列的实证使用 `mayascope-project-plan.json`：第一次执行加 `--max-scenes 1`，得到
 `mayascope-project-queue-paused.json`，状态应为“已暂停”、第一场景“阻断”、第二场景“待运行”；

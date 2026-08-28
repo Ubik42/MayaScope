@@ -32,3 +32,17 @@ Maya 会把该实例降级为 `unknown`，用于复现场景 `requires` 中的�
 `assets/` 下四个 `.exr` 是仅用于路径存在性检查的文本占位文件，不是可渲染图像，也不冒充商业
 素材。扫描只枚举模式所在的本地单层目录，并同时受条目数和时间预算限制；UNC、环境变量路径与
 超预算目录保持“未完整扫描”。工具不会打开文件内容、递归子目录或在 Maya 主线程探测网络共享。
+
+## 三镜头项目门禁
+
+`generate/project_gate_fixture.py` 会生成三个轻量 Maya ASCII 2025 场景、三份带 SHA-256 的 Scene
+Clinic 回执和一个经过二次签名的项目审计包。镜头 010 是干净基线；镜头 020 故意声明发布缓存缺失，
+必须阻断；镜头 030 带一个非阻断插件登记警告。生成器随后调用生产 `build_project_audit` 和
+`verify_project_audit` 复核场景排序、上下文、内嵌回执和项目摘要，不会用手写 JSON 冒充通过。
+
+```powershell
+python -m MayaScope.examples.generate.project_gate_fixture D:\MayaScopeDemo\项目门禁
+```
+
+输出目录中的 `fixture-manifest.json` 记录每个场景与回执的校验值、预期结论和最终项目签名；
+`project-audit-showcase.json` 可通过 MayaScope 顶栏的 **项目门禁** 打开。

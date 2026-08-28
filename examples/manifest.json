@@ -54,6 +54,19 @@
       }
     },
     {
+      "path": "generate/project_gate_fixture.py",
+      "source": "MayaScope 自行编写",
+      "license": "项目内部开发、测试与作品展示",
+      "maya": "2025",
+      "purpose": "生成三场景双层签名项目审计包，覆盖通过、发布阻断和非阻断警告",
+      "expected": {
+        "scene_count": 3,
+        "passed_scene_count": 2,
+        "blocked_scene_count": 1,
+        "atomic_finding_count": 2
+      }
+    },
+    {
       "path": "clinic.team.json",
       "source": "MayaScope 自行编写",
       "license": "项目内部开发、测试与作品展示",

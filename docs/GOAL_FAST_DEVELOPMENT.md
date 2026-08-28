@@ -558,3 +558,20 @@ Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordin
 
 整个 `/goal` 继续保持 active；下一阶段优先拆分 Lens Ribbon 或 Project Gate 的生产视图与应用状态，
 同时保持当前发布面收口，不为展示版继续扩大长周期功能范围。
+
+## 第三十九里程碑进度（完成：Project Gate 状态边界与三镜头发布列车）
+
+1. 新增宿主无关 `presentation.project_gate`，把项目报告、断点队列和所有权故障归一化为不可变 `ProjectGateViewState`，不导入 Maya、PySide 或 UI。
+2. Presentation 层严格验证项目/场景 SHA-256、摘要数量、门禁结论、队列状态、尝试次数和容量预检；证据矛盾时拒绝猜测或渲染。
+3. `ProjectGateCanvas/Strip` 迁入 `ui/project_gate.py`，独立拥有发布列车动画、场景命中测试、工具提示、reduced-motion 和中文可访问名称。
+4. 清空、报告、队列与故障现在统一应用完整视图状态；旧失败色和安全暂停动作不会泄漏到下一份项目证据。
+5. `examples/generate/project_gate_fixture.py` 生成三个轻量 Maya ASCII 2025 场景、三份签名 Scene Clinic 回执和一个二次签名项目包，并立即调用生产 verifier 复核。
+6. 演示素材固定覆盖镜头 010 干净基线、镜头 020 缓存缺失阻断、镜头 030 插件登记警告；输出 manifest 保存实际场景校验值、回执路径、项目签名和预期 2/1 结论。
+7. GUI 生命周期新增 `project-gate` 场景：在真实 Maya 内现场生成、验证并显示签名包，聚焦唯一阻断镜头，确认场景 modified 状态不变。
+8. 1480 × 900 真机 PID 54180 在 22.334 秒内通过；800 × 900 真机 PID 31572 在 22.229 秒内通过。两次均完成重复启动、热重载、菜单卸载和 9 个活动计时器归零。
+9. 第一次真机运行前已有 Maya PID 58104，测试结束后身份保持一致；探针没有附着、驱动或关闭用户宿主。
+10. 普通 Python 246 项通过（19 项宿主限定跳过）；新增 Presentation、View 边界、生成素材和签名聚合回归。
+11. 真实截图暴露的临时绝对路径与完整 64 位签名拥挤已修正为短场景名和签名摘要；窄停靠仍清楚显示绿/橙/绿三节列车与阻断证据。
+12. `ui/workspace.py` 从 3965 行降至 3639 行；`ui/project_gate.py` 278 行，`presentation/project_gate.py` 263 行。这里完成的是项目门禁视图与呈现边界，队列执行器仍保留独立签名状态机和 Worker。
+
+整个 `/goal` 继续保持 active；下一阶段优先拆分 Root Cause Lens 的控制条与候选视图，或补齐黄金调查路径的连续截图/教程证据；以当前完成审计中暴露的最高风险项为准。

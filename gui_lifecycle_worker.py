@@ -106,6 +106,8 @@ def schedule() -> None:
                 self.prepare_instrument_scenario()
             elif self.scenario == "runtime-cancel":
                 self.prepare_runtime_cancel_scenario()
+            elif self.scenario == "project-gate":
+                self.prepare_project_gate_scenario()
             self.screenshot.parent.mkdir(parents=True, exist_ok=True)
             saved = bool(self.first.grab().save(str(self.screenshot)))
             parent = self.first.parentWidget()
@@ -273,6 +275,37 @@ def schedule() -> None:
                 "诊所入口已恢复": self.first.clinic_array.isEnabled(),
                 "上次证据未被覆盖": self.first._runtime_snapshot is self.runtime_before_cancel,
                 "Maya 修改状态未改变": modified_after == self.runtime_modified_before_cancel,
+            }
+
+        def prepare_project_gate_scenario(self):
+            from MayaScope.examples.generate.project_gate_fixture import build_fixture
+            from MayaScope.project_audit import verify_project_audit
+
+            fixture = build_fixture(self.output.parent / "project-gate-fixture")
+            payload = verify_project_audit(Path(fixture["bundle"]))
+            modified_before = bool(cmds.file(query=True, modified=True))
+            self.first._show_project_audit(payload)
+            self.first.project_gate.select_scene(1)
+            self.first._select_project_scene(1)
+            QtWidgets.QApplication.processEvents()
+            summary = payload["summary"]
+            self.checks["真实项目门禁"] = {
+                "通过": bool(
+                    self.first.project_gate.isVisible()
+                    and self.first.project_gate.verdict.text() == "发布已阻断"
+                    and len(self.first.project_gate.canvas._scenes) == 3
+                    and self.first.project_gate.canvas._selected == 1
+                    and summary["passed_scene_count"] == 2
+                    and summary["blocked_scene_count"] == 1
+                    and bool(cmds.file(query=True, modified=True)) == modified_before
+                ),
+                "双层签名": payload["project_sha256"],
+                "场景数": summary["scene_count"],
+                "通过场景": summary["passed_scene_count"],
+                "阻断场景": summary["blocked_scene_count"],
+                "原子发现": summary["atomic_finding_count"],
+                "聚焦阻断镜头": self.first.project_gate.canvas._selected == 1,
+                "Maya 修改状态未改变": bool(cmds.file(query=True, modified=True)) == modified_before,
             }
 
         def after_second(self):

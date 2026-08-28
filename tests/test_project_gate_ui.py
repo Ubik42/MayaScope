@@ -6,7 +6,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from MayaScope.qt_compat import QtWidgets
-from MayaScope.ui.workspace import ProjectGateStrip
+from MayaScope.ui.project_gate import ProjectGateStrip
 
 
 class ProjectGateUiTests(unittest.TestCase):
@@ -75,7 +75,7 @@ class ProjectGateUiTests(unittest.TestCase):
         self.assertIn("容量余量 2.0 GiB", strip.guard.text())
         self.assertIn("Maya PID 24680", strip.guard.text())
         self.assertIn("崩溃联动开启", strip.guard.text())
-        self.assertEqual(strip.canvas._scenes[1]["receipt"]["queue_status"], "运行中")
+        self.assertEqual(strip.canvas._scenes[1].queue_status, "运行中")
         journal["state"] = "已暂停"
         strip.set_queue(journal)
         self.assertEqual(strip.queue_action.text(), "继续队列")
@@ -95,6 +95,20 @@ class ProjectGateUiTests(unittest.TestCase):
         self.assertEqual(strip.verdict.text(), "磁盘容量预检未通过")
         self.assertIn("磁盘容量预检未通过", strip.guard.text())
         self.assertTrue(strip.guard.property("alert"))
+
+    def test_workspace_composes_gate_without_defining_its_canvas(self):
+        from pathlib import Path
+
+        ui_root = Path(__file__).resolve().parents[1] / "ui"
+        workspace = (ui_root / "workspace.py").read_text(encoding="utf-8")
+        gate = (ui_root / "project_gate.py").read_text(encoding="utf-8")
+        self.assertIn("from .project_gate import ProjectGateStrip", workspace)
+        self.assertNotIn("class ProjectGateCanvas", workspace)
+        self.assertNotIn("class ProjectGateStrip", workspace)
+        self.assertIn("class ProjectGateCanvas", gate)
+        self.assertIn("class ProjectGateStrip", gate)
+        for forbidden in ("maya.cmds", "maya.api", "collectors", "from .workspace"):
+            self.assertNotIn(forbidden, gate)
 
 
 if __name__ == "__main__":

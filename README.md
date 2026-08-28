@@ -131,6 +131,9 @@ python -m MayaScope.gui_lifecycle `
   --scenario runtime-cancel --width 1480 --height 900
 ```
 
+项目门禁改动可使用 `--scenario project-gate`。它会现场生成三镜头签名包、用生产 verifier 复核，
+再在真实 Maya 中聚焦唯一阻断镜头并截图；整个过程只读，不改变当前 Maya 场景。
+
 还可以从最终 Release ZIP 完整复演一次干净安装。该命令会验证清单、解压到临时目录、安装隔离
 Maya Module，并在清空开发 `PYTHONPATH` / `MAYA_MODULE_PATH` 后启动真实 Maya；回执会记录
 Maya 实际导入的包目录，再依次验证可恢复卸载、备份恢复、最终卸载和临时目录清理：
@@ -170,6 +173,15 @@ python -m MayaScope.project_audit verify project-audit.json --summary
 
 顶栏 **项目门禁** 只打开校验成功的项目包。动态“项目发布列车”把每个场景绘制为可点击审计舱，
 通过/阻断、问题数与原子发现均来自真实报告；点击场景会把双层签名和严重级统计送入问题证据栏。
+
+仓库提供确定性三镜头素材生成器：它会创建干净基线、缓存缺失阻断和插件登记警告三个 Maya ASCII
+2025 场景，再通过生产聚合器生成并复核三份场景签名与项目二次签名：
+
+```powershell
+python -m MayaScope.examples.generate.project_gate_fixture D:\MayaScopeDemo\项目门禁
+```
+
+![MayaScope 项目发布列车与安全暂停](docs/images/project-queue-guarded-running.png)
 
 若还没有单场景报告，可先创建带源文件/配置哈希的批量计划，再由严格串行队列在后台逐场景运行。
 计划、断点日志、单场景报告和最终项目包都有独立签名；`run` 可直接用于首次执行或断点恢复：
