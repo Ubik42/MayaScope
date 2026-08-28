@@ -76,10 +76,20 @@ def schedule() -> None:
                 self.later(lambda: self.wait_ready(window, callback), 150)
 
         def start(self):
+            import MayaScope
             from MayaScope import __version__, launch
 
             self.launch = launch
             self.version = __version__
+            self.package_root = str(Path(MayaScope.__file__).resolve().parent)
+            expected = os.environ.get("MAYASCOPE_EXPECTED_PACKAGE_ROOT", "")
+            if expected:
+                expected = str(Path(expected).resolve())
+                self.checks["发布包来源"] = {
+                    "实际包目录": self.package_root,
+                    "预期包目录": expected,
+                    "通过": os.path.normcase(self.package_root) == os.path.normcase(expected),
+                }
             self.first = launch.run("workspace")
             self.first.resize(1480, 900)
             self.wait_ready(self.first, self.after_first)
@@ -181,6 +191,7 @@ def schedule() -> None:
                 "maya_version": str(cmds.about(version=True)),
                 "maya_api": str(cmds.about(apiVersion=True)),
                 "plugin_version": self.version,
+                "package_root": self.package_root,
                 "screenshot": str(self.screenshot),
                 "duration_seconds": round(time.perf_counter() - self.started, 3),
                 "checks": self.checks,

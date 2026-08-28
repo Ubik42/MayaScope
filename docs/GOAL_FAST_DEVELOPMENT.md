@@ -435,3 +435,17 @@ Scene Clinic 的 Reference/Animation/Publish 首批规则与批量计划纵向�
 8. 结构化回执、Maya 日志和真实中文宿主截图已落盘；普通启动顺序回归同步加入测试。
 
 整个 `/goal` 继续保持 active；下一阶段优先完成发布 zip 的隔离安装、首次启动和可恢复卸载复演。
+
+## 第三十一里程碑进度（完成：Release ZIP 干净安装回放）
+
+1. 新增 `install_replay` 命令，把最终 Release ZIP 而不是源码目录作为唯一安装输入。
+2. 回放先验证 manifest、成员集合、大小和逐文件 SHA-256，再解压到独立临时 release 目录。
+3. 安装器由解压副本运行，生成的 `MayaScope.mod` 明确指向临时 release；安装后重新查询状态。
+4. 真实 Maya GUI 启动前清空开发 `PYTHONPATH` 与 `MAYA_MODULE_PATH`，只允许 Maya Module 发现包。
+5. Maya 内 worker 记录实际 `MayaScope.__file__` 所在包目录并与预期解压目录比较，杜绝源码假通过。
+6. 同一次回放验证首次绘制、重复启动、热重载、选择回调、计时器、菜单和宿主退出。
+7. 退出后执行可恢复卸载、恢复备份、重新识别和最终卸载；整个临时 Maya 配置与解压目录被清理。
+8. 候选包真实 Maya 2025 PID 50220 在 18.292 秒内自行退出，全部检查通过；新增普通回归覆盖隔离安装状态机。
+
+整个 `/goal` 继续保持 active；下一阶段优先渐进拆分 `ui/workspace.py` 的 Presentation State、
+后台任务编排和业务工作区，不一次性重写已经通过真实 Maya 验证的 QPainter/QGraphicsView 组件。

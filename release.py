@@ -99,6 +99,7 @@ def build_release(
             "install": "python -m MayaScope.install install",
             "runner": "python -m MayaScope.runner --help",
             "audit": "python -m MayaScope.audit --help",
+            "install_replay": "python -m MayaScope.install_replay --help",
         },
         "files": entries,
     }

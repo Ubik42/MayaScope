@@ -94,6 +94,19 @@ python -m MayaScope.gui_lifecycle `
   --screenshot mayascope-real-maya-gui.png
 ```
 
+还可以从最终 Release ZIP 完整复演一次干净安装。该命令会验证清单、解压到临时目录、安装隔离
+Maya Module，并在清空开发 `PYTHONPATH` / `MAYA_MODULE_PATH` 后启动真实 Maya；回执会记录
+Maya 实际导入的包目录，再依次验证可恢复卸载、备份恢复、最终卸载和临时目录清理：
+
+```powershell
+python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
+  --maya "C:\Program Files\Autodesk\Maya2025\bin\maya.exe" `
+  --output mayascope-clean-install-replay.json `
+  --screenshot mayascope-clean-install-first-launch.png
+```
+
+这项验证专门防止“发布包看似安装成功，真实 Maya 实际仍从开发源码目录导入”的假通过。
+
 Scene Clinic 也可作为只读 CI / 发布门禁运行。它只启动一个隐藏 Maya 2025 进程，打开场景时
 禁用 script node 执行，并在前后校验源文件 SHA-256：
 

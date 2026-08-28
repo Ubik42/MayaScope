@@ -52,6 +52,10 @@ def run_gui_lifecycle(
     screenshot: Path,
     *,
     timeout: float = 90.0,
+    maya_app_dir: Path | None = None,
+    inject_package_parent: bool = True,
+    expected_package_root: Path | None = None,
+    working_directory: Path | None = None,
 ) -> dict:
     maya = maya_executable.expanduser().resolve()
     if not maya.is_file() or maya.name.casefold() != "maya.exe":
@@ -78,15 +82,27 @@ def run_gui_lifecycle(
             encoding="utf-8",
         )
         environment = os.environ.copy()
-        package_parent = str(Path(__file__).resolve().parent.parent)
-        environment["PYTHONPATH"] = package_parent + os.pathsep + environment.get(
-            "PYTHONPATH", ""
+        if inject_package_parent:
+            package_parent = str(Path(__file__).resolve().parent.parent)
+            environment["PYTHONPATH"] = package_parent + os.pathsep + environment.get(
+                "PYTHONPATH", ""
+            )
+        else:
+            # A clean-install replay must prove Maya discovered the package from
+            # its .mod file, not from this development checkout.
+            environment.pop("PYTHONPATH", None)
+            environment.pop("MAYA_MODULE_PATH", None)
+        environment["MAYA_APP_DIR"] = str(
+            (maya_app_dir or (root / "maya-app")).expanduser().resolve()
         )
-        environment["MAYA_APP_DIR"] = str(root / "maya-app")
         environment["MAYA_DISABLE_CIP"] = "1"
         environment["MAYA_DISABLE_CER"] = "1"
         environment["MAYASCOPE_GUI_LIFECYCLE_WORKER"] = str(worker_receipt)
         environment["MAYASCOPE_GUI_LIFECYCLE_SCREENSHOT"] = str(screenshot)
+        if expected_package_root is not None:
+            environment["MAYASCOPE_EXPECTED_PACKAGE_ROOT"] = str(
+                expected_package_root.expanduser().resolve()
+            )
 
         startup = None
         creation_flags = 0
@@ -104,6 +120,7 @@ def run_gui_lifecycle(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            cwd=str(working_directory.expanduser().resolve()) if working_directory else None,
             startupinfo=startup,
             creationflags=creation_flags,
         )

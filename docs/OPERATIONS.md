@@ -475,3 +475,41 @@ python -m MayaScope.gui_lifecycle `
 2026-08-25 的 Maya 2025.3.3 实证由 PID 34284 完成：13.092 秒自行退出，9 个活动计时器归零，
 残留可见工作区为 0；测试前已有 PID 32232 全程保持原身份。结构化回执和真实宿主截图分别为
 `mayascope-gui-lifecycle.json`、`mayascope-real-maya-gui.png`。
+
+## 27. Release ZIP 干净安装回放
+
+普通 Module 测试只能证明安装器会写文件，不能证明最终 ZIP 解压后能被一套全新的 Maya 配置发现。
+`MayaScope.install_replay` 把发布包当作唯一输入，完整复演：
+
+```text
+验证 release-manifest 与全部文件 SHA-256
+→ 解压到临时 release 目录
+→ 使用解压副本安装隔离 MayaScope.mod
+→ 清空开发 PYTHONPATH 与 MAYA_MODULE_PATH
+→ 通过真实 Maya 2025 首次启动工作区
+→ 核对 MayaScope.__file__ 确实来自临时 release
+→ 卸载并保留备份
+→ 恢复备份并重新识别
+→ 再次卸载
+→ 删除完整临时安装环境
+```
+
+运行示例：
+
+```powershell
+python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
+  --maya "C:\Program Files\Autodesk\Maya2025\bin\maya.exe" `
+  --output mayascope-clean-install-replay.json `
+  --screenshot mayascope-clean-install-first-launch.png `
+  --timeout 100
+```
+
+它复用真实 GUI 生命周期探针：记录启动前已有 Maya PID，只操作自己创建的隐藏 GUI，超时仅在
+PID、启动 ticks 与 `maya.exe` 路径仍精确匹配时回收。开发目录不会加入子进程环境；Module 内容、
+实际加载包目录、安装/恢复/卸载状态、真实 GUI 回执和临时目录清理结论全部进入结构化 JSON。
+
+2026-08-27 的首次实证使用候选 ZIP SHA-256
+`e96ac44af36a553bf31343afcab9e753e05f0546cbdcdd0798127d14787b91d2`。Maya 2025 测试进程
+PID 50220 在 18.292 秒内自行退出；解压包来源核对、首次启动、重复启动、热重载、9 个计时器归零、
+菜单卸载、Module 备份恢复、最终无活动 Module 和临时目录删除全部通过。最终发布包重建后必须
+重新运行本命令，以最终 ZIP 的哈希回执替代该候选证据。
