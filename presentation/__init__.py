@@ -11,6 +11,14 @@ from .project_gate import (
     present_project_queue,
     present_project_report,
 )
+from .lens import (
+    LensCandidateCardState,
+    LensCandidateEvidenceState,
+    LensPresentationError,
+    LensResultState,
+    present_lens_candidate,
+    present_lens_result,
+)
 
 __all__ = [
     "ClinicEvidencePresenter",
@@ -23,4 +31,10 @@ __all__ = [
     "present_project_fault",
     "present_project_queue",
     "present_project_report",
+    "LensCandidateCardState",
+    "LensCandidateEvidenceState",
+    "LensPresentationError",
+    "LensResultState",
+    "present_lens_candidate",
+    "present_lens_result",
 ]

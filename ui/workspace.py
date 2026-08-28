@@ -29,11 +29,7 @@ from ..analysis.graph import (
     invalidate_graph_indexes,
 )
 from ..analysis.config import ClinicConfigError, ClinicEnvironment, load_environment_from_env
-from ..analysis.lens import RootCauseCandidate, RootCauseReport
-from ..analysis.measured_lens import (
-    MeasuredCandidate,
-    MeasuredRootCauseReport,
-)
+from ..analysis.lens import RootCauseCandidate
 from ..analysis.runtime import analyze_runtime
 from ..analysis.pulse import node_stats
 from ..analysis.rules import Issue, Severity
@@ -53,9 +49,13 @@ from ..collectors import (
     plan_node_state_experiment,
     profile_callable,
 )
-from ..model import SceneNode, SceneSnapshot
+from ..model import SceneSnapshot
 from ..host_health import HostHealth, collect_host_health
-from ..presentation import WorkspacePresentationState
+from ..presentation import (
+    WorkspacePresentationState,
+    present_lens_candidate,
+    present_lens_result,
+)
 from ..qt_compat import QtCore, QtGui, QtWidgets
 from ..runtime_log import log_event
 from ..runner import (
@@ -73,6 +73,7 @@ from .foundation import (
     qt_enum as _qt_enum,
 )
 from .investigation_renderer import render_atlas_transition
+from .lens import LensControlBar, LensRibbon
 from .profiler import PulseHorizon
 from .project_gate import ProjectGateStrip
 from .runtime import RuntimeConstellationStrip
@@ -87,130 +88,6 @@ _WINDOW = None
 
 
 
-
-
-class CandidateCard(QtWidgets.QFrame):
-    activated = QtCore.Signal(object)
-
-    def __init__(self, candidate: RootCauseCandidate, node: SceneNode, rank: int, measured: Optional[MeasuredCandidate] = None, parent=None):
-        super().__init__(parent)
-        self.candidate = candidate
-        self.setObjectName("CandidateCard")
-        self.setMinimumWidth(205)
-        self.setMaximumWidth(255)
-        self.setCursor(QtGui.QCursor(_qt_enum(QtCore.Qt, "PointingHandCursor")))
-        self.setFocusPolicy(_qt_enum(QtCore.Qt, "StrongFocus"))
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(13, 9, 13, 9)
-        layout.setSpacing(3)
-        if measured is None:
-            signal_text = "%02d  结构信号  %.1f" % (rank, candidate.structural_score)
-        else:
-            signal_text = "%02d  实测  %.2f ms  ·  %s 个事件" % (rank, measured.observed_inclusive_us / 1000.0, measured.observed_event_count)
-        signal = QtWidgets.QLabel(signal_text)
-        signal.setObjectName("CandidateSignal")
-        layout.addWidget(signal)
-        name = QtWidgets.QLabel(node.name)
-        name.setObjectName("CandidateName")
-        name.setToolTip(node.name)
-        layout.addWidget(name)
-        detail = QtWidgets.QLabel("%s  ·  距离 %s 跳" % (node.type_name, candidate.distance))
-        detail.setObjectName("CandidateDetail")
-        layout.addWidget(detail)
-        self.setToolTip("\n".join(candidate.reasons))
-
-    def mousePressEvent(self, event):
-        self.activated.emit(self.candidate)
-        super().mousePressEvent(event)
-
-    def keyPressEvent(self, event):
-        if event.key() in (_qt_enum(QtCore.Qt, "Key_Return"), _qt_enum(QtCore.Qt, "Key_Space")):
-            self.activated.emit(self.candidate)
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-
-class LensRibbon(QtWidgets.QFrame):
-    candidateActivated = QtCore.Signal(object)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("LensRibbon")
-        self.setFixedHeight(112)
-        self.setMinimumWidth(0)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Fixed)
-        outer = QtWidgets.QHBoxLayout(self)
-        outer.setContentsMargins(18, 10, 12, 10)
-        outer.setSpacing(12)
-        marker = QtWidgets.QFrame()
-        marker.setObjectName("LensMarker")
-        marker.setFixedWidth(146)
-        marker_layout = QtWidgets.QVBoxLayout(marker)
-        marker_layout.setContentsMargins(10, 4, 10, 4)
-        marker_layout.setSpacing(2)
-        title = QtWidgets.QLabel("根因候选")
-        title.setObjectName("LensRibbonTitle")
-        marker_layout.addWidget(title)
-        self.summary = QtWidgets.QLabel("结构推断 · 尚未实测")
-        self.summary.setObjectName("LensDisclaimer")
-        marker_layout.addWidget(self.summary)
-        outer.addWidget(marker)
-        scroll = QtWidgets.QScrollArea()
-        scroll.setObjectName("LensScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setMinimumWidth(0)
-        scroll.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(_qt_enum(QtCore.Qt, "ScrollBarAsNeeded"))
-        scroll.setVerticalScrollBarPolicy(_qt_enum(QtCore.Qt, "ScrollBarAlwaysOff"))
-        self.host = QtWidgets.QWidget()
-        self.cards = QtWidgets.QHBoxLayout(self.host)
-        self.cards.setContentsMargins(0, 0, 0, 0)
-        self.cards.setSpacing(8)
-        self.cards.addStretch(1)
-        scroll.setWidget(self.host)
-        outer.addWidget(scroll, 1)
-
-    def minimumSizeHint(self):
-        return QtCore.QSize(300, 112)
-
-    def sizeHint(self):
-        return QtCore.QSize(900, 112)
-
-    def set_report(self, report: RootCauseReport, snapshot: SceneSnapshot, measured_report: Optional[MeasuredRootCauseReport] = None):
-        while self.cards.count() > 1:
-            item = self.cards.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        measured_by_id = {
-            item.structural.node_id: item for item in measured_report.candidates
-        } if measured_report else {}
-        for rank, candidate in enumerate(report.candidates, 1):
-            card = CandidateCard(candidate, snapshot.node_map[candidate.node_id], rank, measured_by_id.get(candidate.node_id))
-            card.activated.connect(self.candidateActivated)
-            self.cards.insertWidget(self.cards.count() - 1, card)
-        suffix = " · 已截断：%s" % report.truncation_reason if report.truncated else ""
-        telemetry = "%s 节点 / %s 边 · %.2f ms" % (
-            report.scanned_node_count,
-            report.scanned_edge_count,
-            report.query_elapsed_ms,
-        )
-        if measured_report:
-            self.summary.setText("实测覆盖 %.0f%% · %s%s" % (measured_report.measurement_coverage * 100.0, telemetry, suffix))
-        else:
-            self.summary.setText("结构推断 · %s%s" % (telemetry, suffix))
-        self.summary.setToolTip(
-            "查询内核在 %.3f ms 内扫描了 %s 个节点与 %s 条边%s。"
-            % (
-                report.query_elapsed_ms,
-                report.scanned_node_count,
-                report.scanned_edge_count,
-                "；停止原因：%s" % report.truncation_reason if report.truncated else "",
-            )
-        )
-        self.setVisible(True)
 
 
 class DeltaStrip(QtWidgets.QFrame):
@@ -1066,55 +943,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         top_layout.addWidget(self.capture_button)
         outer.addWidget(top)
 
-        self.lens_bar = QtWidgets.QFrame()
-        self.lens_bar.setObjectName("LensBar")
-        lens_layout = QtWidgets.QHBoxLayout(self.lens_bar)
-        lens_layout.setContentsMargins(18, 8, 14, 8)
-        lens_layout.setSpacing(9)
-        lens_mark = QtWidgets.QLabel("◉  根因透镜")
-        lens_mark.setObjectName("LensMark")
-        lens_layout.addWidget(lens_mark)
-        self.lens_focus = QtWidgets.QLabel("尚未聚焦")
-        self.lens_focus.setObjectName("LensFocus")
-        self.lens_focus.setMinimumWidth(220)
-        lens_layout.addWidget(self.lens_focus)
-        lens_layout.addStretch(1)
-        self.direction_label = QtWidgets.QLabel("追踪方向")
-        self.direction_label.setObjectName("LensControlLabel")
-        lens_layout.addWidget(self.direction_label)
-        self.upstream_button = QtWidgets.QPushButton("上游")
-        self.upstream_button.setObjectName("LensToggle")
-        self.upstream_button.setCheckable(True)
-        self.upstream_button.setChecked(True)
-        self.upstream_button.clicked.connect(lambda: self._set_lens_direction("upstream"))
-        lens_layout.addWidget(self.upstream_button)
-        self.downstream_button = QtWidgets.QPushButton("影响域")
-        self.downstream_button.setObjectName("LensToggle")
-        self.downstream_button.setCheckable(True)
-        self.downstream_button.clicked.connect(lambda: self._set_lens_direction("downstream"))
-        lens_layout.addWidget(self.downstream_button)
-        self.depth_label = QtWidgets.QLabel("深度")
-        self.depth_label.setObjectName("LensControlLabel")
-        lens_layout.addWidget(self.depth_label)
-        self.lens_depth = QtWidgets.QSpinBox()
-        self.lens_depth.setRange(1, 8)
-        self.lens_depth.setValue(4)
-        self.lens_depth.setObjectName("LensDepth")
-        self.lens_depth.valueChanged.connect(self._run_lens)
-        lens_layout.addWidget(self.lens_depth)
-        self.maya_select_button = QtWidgets.QPushButton("在 Maya 中选择")
-        self.maya_select_button.setObjectName("LensSecondary")
-        self.maya_select_button.clicked.connect(self._select_focus_in_maya)
-        lens_layout.addWidget(self.maya_select_button)
-        rerun = QtWidgets.QPushButton("重新追踪")
-        rerun.setObjectName("LensPrimary")
-        rerun.clicked.connect(self._run_lens)
-        lens_layout.addWidget(rerun)
-        close_lens = QtWidgets.QPushButton("×")
-        close_lens.setObjectName("LensClose")
-        close_lens.setToolTip("关闭根因透镜")
-        close_lens.clicked.connect(self._close_lens)
-        lens_layout.addWidget(close_lens)
+        self.lens_bar = LensControlBar()
+        self.lens_bar.directionChanged.connect(self._set_lens_direction)
+        self.lens_bar.depthChanged.connect(self._run_lens)
+        self.lens_bar.mayaSelectRequested.connect(self._select_focus_in_maya)
+        self.lens_bar.rerunRequested.connect(self._run_lens)
+        self.lens_bar.dismissRequested.connect(self._close_lens)
         self.lens_bar.setVisible(False)
         outer.addWidget(self.lens_bar)
 
@@ -1373,10 +1207,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.project_gate_button.setVisible(not compact)
         self.project_queue_button.setVisible(not compact)
         self.runtime_button.setVisible(not compact)
-        self.maya_select_button.setVisible(not compact)
-        self.direction_label.setVisible(not compact)
-        self.depth_label.setVisible(not compact)
-        self.lens_focus.setVisible(not compact)
+        self.lens_bar.set_compact(compact)
         self.search.setMaximumWidth(175 if compact else 310)
         self.clinic_view.set_compact(compact)
         super().resizeEvent(event)
@@ -1429,6 +1260,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         """Hide Lens widgets without independently mutating investigation state."""
         self.lens_bar.setVisible(False)
         self.lens_ribbon.setVisible(False)
+        self.clinic_view.set_lens_mode(False)
         self.pulse.counterfactual_button.setEnabled(False)
 
     def _set_selection_sync_enabled(self, enabled: bool):
@@ -1478,14 +1310,14 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if not self._snapshot or not self.selection_sync_button.isChecked():
             return
         names = self._pending_host_selection
-        direction = "upstream" if self.upstream_button.isChecked() else "downstream"
+        direction = self.lens_bar.direction
         try:
             decision = self._investigation.host_selection(
                 self._presentation,
                 names,
                 identity_index=self._host_identity_index,
                 direction=direction,
-                max_depth=self.lens_depth.value(),
+                max_depth=self.lens_bar.depth,
                 center=self.motion_button.isChecked(),
             )
         except Exception as exc:
@@ -1506,9 +1338,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if decision.outcome == "single":
             node = self._snapshot.node_map[decision.node_ids[0]]
             self.pulse.counterfactual_button.setEnabled(not node.referenced)
-            self.lens_focus.setText(node.name)
-            self.lens_focus.setToolTip(
-                node.dag_paths[0] if node.dag_paths else node.id
+            self.lens_bar.set_focus(
+                node.name, node.dag_paths[0] if node.dag_paths else node.id
             )
             self.lens_bar.setVisible(True)
             self._present_lens_result()
@@ -2253,28 +2084,27 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             return
         node = self._snapshot.node_map[node_id]
         self.pulse.counterfactual_button.setEnabled(not node.referenced)
-        self.lens_focus.setText(node.name)
-        self.lens_focus.setToolTip(node.dag_paths[0] if node.dag_paths else node.id)
+        self.lens_bar.set_focus(
+            node.name, node.dag_paths[0] if node.dag_paths else node.id
+        )
         self.lens_bar.setVisible(True)
         self._run_lens(node_id=node_id)
 
     def _set_lens_direction(self, direction: str):
-        upstream = direction == "upstream"
-        self.upstream_button.setChecked(upstream)
-        self.downstream_button.setChecked(not upstream)
+        self.lens_bar.set_direction(direction)
         self._run_lens()
 
     def _run_lens(self, *_args, node_id=None):
         focus_node_id = node_id or self._focus_node_id
         if not self._snapshot or not focus_node_id:
             return
-        direction = "upstream" if self.upstream_button.isChecked() else "downstream"
+        direction = self.lens_bar.direction
         try:
             transition = self._investigation.focus(
                 self._presentation,
                 focus_node_id,
                 direction=direction,
-                max_depth=self.lens_depth.value(),
+                max_depth=self.lens_bar.depth,
             )
         except Exception as exc:
             self.status.setText("  根因透镜失败  ·  %s" % exc)
@@ -2288,38 +2118,16 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         measured = self._measured_report
         if not self._snapshot or report is None:
             return
-        direction = report.direction
-        self.lens_ribbon.set_report(report, self._snapshot, measured)
+        state = present_lens_result(report, self._snapshot, measured)
+        self.lens_ribbon.set_state(state)
+        self.clinic_view.set_lens_mode(True)
         self.clinic_view.set_heading("根因透镜")
         self.clinic_view.set_action("结构证据", enabled=False)
         if report.candidates:
             self._candidate_selected(report.candidates[0])
         else:
-            self.clinic_view.set_body(
-                "在深度 %s 内未找到%s DG 候选。\n\n"
-                "这说明结构范围为空，但不能证明该症状没有运行时原因。"
-                % (report.max_depth, "上游" if direction == "upstream" else "下游")
-            )
-        mode = "实测 + 结构" if measured else "结构推断"
-        capture_reuse = self._snapshot.metadata.get("capture_reuse", {})
-        reuse_status = (
-            "  ·  CSR 已复用"
-            if capture_reuse.get("topology_unchanged")
-            else ""
-        )
-        self.status.setText(
-            "  根因透镜  ·  %s  ·  %s  ·  %s 节点 / %s 边  ·  %.2f ms  ·  %s 个候选%s%s"
-            % (
-                mode,
-                "上游" if direction == "upstream" else "影响域",
-                report.scanned_node_count,
-                report.scanned_edge_count,
-                report.query_elapsed_ms,
-                len(report.candidates),
-                "  ·  已截断：%s" % report.truncation_reason if report.truncated else "",
-                reuse_status,
-            )
-        )
+            self.clinic_view.set_body(state.empty_body)
+        self.status.setText(state.status)
 
     def _candidate_selected(self, candidate: RootCauseCandidate):
         if not self._snapshot or not self._lens_report:
@@ -2333,50 +2141,14 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             return
         self._apply_investigation_transition(transition)
         candidate = self._selected_candidate
-        node_map = self._snapshot.node_map
-        node = node_map[candidate.node_id]
-        path = "  →  ".join(node_map[node_id].name for node_id in candidate.path_node_ids)
-        plugs = []
-        for link in candidate.path_links:
-            source = link.source_plug or node_map[link.source_id].name
-            target = link.target_plug or node_map[link.target_id].name
-            plugs.append("%s  →  %s" % (source, target))
-        factors = "\n".join(
-            "%s  ·  %s" % (item.label, item.value)
-            for item in candidate.evidence
-            if item.value not in {"0", "0.0"}
+        evidence = present_lens_candidate(
+            candidate,
+            self._lens_report,
+            self._snapshot,
+            self._measured_report,
         )
-        reasons = "\n".join("• %s" % reason for reason in candidate.reasons)
-        plug_text = "\n".join(plugs) if plugs else "节点身份直接命中"
-        self.clinic_view.set_heading(node.name)
-        measured = None
-        if self._measured_report:
-            measured = next(
-                (item for item in self._measured_report.candidates if item.structural.node_id == candidate.node_id),
-                None,
-            )
-        measurement = ""
-        if measured and self._measured_report:
-            measurement = (
-                "选定范围内的实测结果\n"
-                "包含耗时 %.3f ms  ·  %s 个事件  ·  占已映射耗时 %.1f%%\n"
-                "路径包含耗时 %.3f ms  ·  覆盖率 %.0f%%\n"
-                "范围 %.3f–%.3f ms\n"
-                "包含事件可能互相重叠；这是观测证据，不代表预计优化收益。\n\n"
-                % (
-                    measured.observed_inclusive_us / 1000.0,
-                    measured.observed_event_count,
-                    measured.observed_capture_share * 100.0,
-                    measured.path_inclusive_us / 1000.0,
-                    self._measured_report.measurement_coverage * 100.0,
-                    self._measured_report.selection_start_us / 1000.0,
-                    self._measured_report.selection_end_us / 1000.0,
-                )
-            )
-        self.clinic_view.set_body(
-            "%s结构信号 %.1f / 99\n该分数不是概率\n\n%s\n\n因果路径\n%s\n\nPlug 证据\n%s\n\n评分因素\n%s"
-            % (measurement, candidate.structural_score, reasons, path, plug_text, factors)
-        )
+        self.clinic_view.set_heading(evidence.heading)
+        self.clinic_view.set_body(evidence.body)
 
     def _show_host_health(self):
         health = self._host_health

@@ -67,6 +67,18 @@
       }
     },
     {
+      "path": "generate/lens_chain_scene.py",
+      "source": "MayaScope 使用 Maya 2025 确定性生成",
+      "license": "项目内部开发、测试与作品展示",
+      "maya": "2025",
+      "purpose": "生成四级上游绑定驱动链，覆盖 Root Cause Lens 因果走廊、Plug 证据与 fan-out 候选",
+      "expected": {
+        "focus": "heroFace_CTRL",
+        "upstream_candidates": 4,
+        "fanout_driver": "faceDriver"
+      }
+    },
+    {
       "path": "clinic.team.json",
       "source": "MayaScope 自行编写",
       "license": "项目内部开发、测试与作品展示",

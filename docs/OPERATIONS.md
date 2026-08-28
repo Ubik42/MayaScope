@@ -481,6 +481,10 @@ modified 状态前后一致。默认场景不执行这些额外操作，干净�
 2025 场景和三份签名审计回执，使用生产 `verify_project_audit` 复核双层签名后，显示两项通过、一项
 阻断的项目发布列车并聚焦缓存缺失镜头。该场景同时验证宽屏与 800px 停靠时的中文裁切和布局。
 
+`--scenario lens` 会在受管 Maya 中调用 `examples/generate/lens_chain_scene.py`，生成并保存一条带
+fan-out 的真实 DG 驱动链，再从 `heroFace_CTRL` 向上追踪四级候选。回执核对候选身份、追踪方向、
+控制条与证据带可见性，以及追踪前后 Maya modified 状态一致；1480px 与 800px 都应留下截图。
+
 探针依次检查首次绘制与捕获、重复启动只保留一个可见工作区、开发热重载先关闭旧窗口、选择回调
 移除、全部动态计时器停止、菜单卸载和宿主退出。超时时只在 PID、启动 ticks 和可执行路径仍与本次
 创建身份完全一致时终止进程。最终回执同时证明测试进程已经结束、启动前 Maya 身份逐一保持不变。
@@ -519,7 +523,8 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
 ```
 
 涉及 Profiler/Runtime 视图或状态恢复的候选包使用 `--scenario instruments`；涉及 Runtime 会话、
-取消和控件恢复时使用 `--scenario runtime-cancel`。该参数会原样传给从
+取消和控件恢复时使用 `--scenario runtime-cancel`；涉及根因呈现、动态布局或候选交互时使用
+`--scenario lens`。该参数会原样传给从
 临时 Module 启动的真实 GUI 探针，因此能证明仪器闭环来自 ZIP 解压副本，而不是开发源码。可同时
 传入 `--width 800 --height 900` 验证窄停靠。
 

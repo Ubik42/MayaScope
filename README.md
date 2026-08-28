@@ -11,6 +11,8 @@ unknown，或者某个控制器一动就让全场景重新计算时，MayaScope 
 
 ![MayaScope 在真实 Maya 2025 GUI 中运行](docs/images/real-maya-gui.png)
 
+![MayaScope 根因透镜：真实 Maya DG 因果走廊](docs/images/root-cause-lens-wide.png)
+
 ## 30 秒看懂它能做什么
 
 | 遇到的实际问题 | MayaScope 怎么处理 |
@@ -65,6 +67,9 @@ Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 �
 当前生产界面仍是原生 Maya 2025 + PySide6：`ui/foundation.py` 统一中文字体、光谱色板和基础交互，
 `ui/atlas.py` 独立负责真实 Scene Atlas 的节点、连接、选择与动态证据覆盖；主窗口继续渐进迁移，
 没有为了“重构”另画一套截图专用前端。
+Root Cause Lens 的宿主无关证据由 `presentation/lens.py` 校验并生成，`ui/lens.py` 独立持有动态控制条、
+键盘可达候选卡和横向证据带；进入透镜时 Atlas 会把实际 DG 候选按距离重排成因果走廊，关闭后恢复
+原始图谱布局。右侧证据栏会暂时收起普通规则卡，把完整空间留给节点路径、Plug 连接和评分因素。
 核心调查控制流由宿主无关 `application.InvestigationCoordinator` 校验快照代次、Scene Clinic 结果、
 Maya 选择和 Root Cause Lens，再以类型化意图驱动同一个生产 Atlas；旧异步结果不会静默覆盖新场景。
 右侧 Scene Clinic 已成为完整、自持有的生产视图：规则阵列、四通道动态光谱、制片信号、
@@ -133,6 +138,9 @@ python -m MayaScope.gui_lifecycle `
 
 项目门禁改动可使用 `--scenario project-gate`。它会现场生成三镜头签名包、用生产 verifier 复核，
 再在真实 Maya 中聚焦唯一阻断镜头并截图；整个过程只读，不改变当前 Maya 场景。
+
+根因透镜改动使用 `--scenario lens`。探针会在自己的隐藏 Maya 中生成并保存一条五节点绑定驱动链，
+从 `heroFace_CTRL` 向上追踪四个候选，验证因果走廊、候选卡、Plug 证据、宽窄自适应和场景修改状态。
 
 还可以从最终 Release ZIP 完整复演一次干净安装。该命令会验证清单、解压到临时目录、安装隔离
 Maya Module，并在清空开发 `PYTHONPATH` / `MAYA_MODULE_PATH` 后启动真实 Maya；回执会记录
@@ -330,11 +338,17 @@ O(选择数) 查询；关闭工作区或关闭联动会立即移除 Maya callbac
 
 选择 Atlas 节点或在 Maya 中选择节点，会自动打开 **根因透镜**：
 
-- `UPSTREAM` 追踪症状的结构性来源，`IMPACT` 查看下游影响域；
+- `上游` 追踪症状的结构性来源，`影响域` 查看下游影响范围；
 - 根据 DG 距离、分支影响、节点类型、现有 Issue 与 Reference 边界排列候选；
 - 每个候选都展示实际节点路径、Plug 连接和评分构成；
-- “Structural Signal”只代表结构调查优先级，不冒充 Profiler 测量结果或根因概率；
+- “结构信号”只代表结构调查优先级，不冒充 Profiler 测量结果或根因概率；
+- 候选按真实距离进入水平因果走廊；选中候选以动画连线强调精确路径，关闭时恢复原 Atlas 布局；
 - 支持深度调整、候选键盘导航、Maya 双向选择和静态 reduced-motion 模式。
+
+宽屏能同时看见完整五节点走廊、四张候选卡和右侧 Plug 证据；800px 窄停靠会收起次要控制，
+候选带改为横向滚动并保留主要动作：
+
+![MayaScope 根因透镜窄停靠](docs/images/root-cause-lens-narrow.png)
 
 底部 **追踪地平线** 已接入 Maya 2025 的真实 Profiler，而不是装饰波形：
 
@@ -524,6 +538,8 @@ qt_compat.py            Maya 2025 / PySide6 UI 边界
 model/profiler.py       ProfilerCapture 与事件数据契约
 analysis/pulse.py       Profiler v2 解析、时间窗与节点热度聚合
 analysis/measured_lens.py  测量证据与结构因果候选融合
+presentation/lens.py      根因结果代次与中文证据呈现校验
+ui/lens.py                根因控制条、候选卡与横向证据带
 analysis/clinic.py      可扩展规则注册、契约校验与故障隔离
 analysis/incidents.py   可解释的 Finding → Incident 聚类
 analysis/config.py      严格团队 JSON、指纹和安全回退

@@ -218,6 +218,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
         self._snapshot: Optional[SceneSnapshot] = None
         self._graph = None
         self._ranked_node_ids: Tuple[str, ...] = ()
+        self._lens_positions: Dict[str, QtCore.QPointF] = {}
         self._suppress_selection_signal = False
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -285,6 +286,7 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             self.scene().clear()
             self._node_items.clear()
             self._edge_items = []
+            self._lens_positions.clear()
         self._snapshot = snapshot
         self._graph = get_graph_index(snapshot, ("dg", "dag"))
         self._ranked_node_ids = self._graph.ranked_node_ids()
@@ -378,6 +380,30 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
         priority.extend(item.node_id for item in report.candidates)
         priority.extend(report.scope_node_ids)
         self._ensure_materialized(priority)
+        if not self._lens_positions:
+            self._lens_positions = {
+                node_id: QtCore.QPointF(item.pos())
+                for node_id, item in self._node_items.items()
+            }
+        focus_item = self._node_items.get(report.focus_node_id)
+        if focus_item is not None:
+            focus_item.setPos(0.0, 0.0)
+        lanes = {}
+        for root_cause in report.candidates:
+            lanes.setdefault(root_cause.distance, []).append(root_cause.node_id)
+        direction = -1.0 if report.direction == "upstream" else 1.0
+        for distance, node_ids in lanes.items():
+            ordered = sorted(node_ids)
+            y_offset = (len(ordered) - 1) * 52.5
+            for index, node_id in enumerate(ordered):
+                item = self._node_items.get(node_id)
+                if item is not None:
+                    item.setPos(
+                        direction * distance * 210.0,
+                        index * 105.0 - y_offset,
+                    )
+        for edge in self._edge_items:
+            edge.refresh()
         scope = set(report.scope_node_ids)
         candidate_ids = {item.node_id for item in report.candidates}
         path = set(candidate.path_node_ids if candidate else report.path_node_ids)
@@ -401,15 +427,29 @@ class SpectralAtlasView(QtWidgets.QGraphicsView):
             item.setOpacity(1.0 if node_id in scope else 0.07)
         for edge in self._edge_items:
             edge.set_trace(edge.key in trace_edges, edge.key[0] in scope and edge.key[1] in scope)
-        visible_ids = set(candidate.path_node_ids if candidate else report.scope_node_ids)
+        visible_ids = set(report.scope_node_ids)
         visible = [self._node_items[node_id] for node_id in visible_ids if node_id in self._node_items]
         if visible:
             bounds = visible[0].sceneBoundingRect()
             for item in visible[1:]:
                 bounds = bounds.united(item.sceneBoundingRect())
-            self.fitInView(bounds.adjusted(-130, -130, 130, 130), qt_enum(QtCore.Qt, "KeepAspectRatio"))
+            lens_bounds = bounds.adjusted(-130, -130, 130, 130)
+            self.scene().setSceneRect(lens_bounds)
+            self.resetTransform()
+            self.fitInView(lens_bounds, qt_enum(QtCore.Qt, "KeepAspectRatio"))
+            self.centerOn(lens_bounds.center())
 
     def clear_lens(self):
+        for node_id, position in self._lens_positions.items():
+            item = self._node_items.get(node_id)
+            if item is not None:
+                item.setPos(position)
+        self._lens_positions.clear()
+        for edge in self._edge_items:
+            edge.refresh()
+        self.scene().setSceneRect(
+            self.scene().itemsBoundingRect().adjusted(-130, -130, 130, 130)
+        )
         for item in self._node_items.values():
             item.set_role("normal")
             item.set_hot(False)

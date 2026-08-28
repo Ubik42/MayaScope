@@ -581,9 +581,9 @@ class SceneClinicView(QtWidgets.QFrame):
         )
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
-        eyebrow = QtWidgets.QLabel("问题证据")
-        eyebrow.setObjectName("Eyebrow")
-        layout.addWidget(eyebrow)
+        self.eyebrow = QtWidgets.QLabel("问题证据")
+        self.eyebrow.setObjectName("Eyebrow")
+        layout.addWidget(self.eyebrow)
         self.heading = QtWidgets.QLabel("等待场景信号")
         self.heading.setObjectName("RailHeading")
         self.heading.setWordWrap(True)
@@ -612,6 +612,9 @@ class SceneClinicView(QtWidgets.QFrame):
         self.evidence = QtWidgets.QLabel("捕获场景后将在这里呈现因果证据。")
         self.evidence.setObjectName("Evidence")
         self.evidence.setWordWrap(True)
+        self.evidence.setAlignment(
+            _qt_enum(QtCore.Qt, "AlignLeft") | _qt_enum(QtCore.Qt, "AlignTop")
+        )
         layout.addWidget(self.evidence)
         self.plan_button = QtWidgets.QPushButton("预览变更计划")
         self.plan_button.setObjectName("PlanButton")
@@ -628,6 +631,16 @@ class SceneClinicView(QtWidgets.QFrame):
         self.setMinimumWidth(270 if compact else 320)
         self.setMaximumWidth(330 if compact else 430)
         self.rule_array.set_compact(compact)
+
+    def set_lens_mode(self, active: bool):
+        """Give causal evidence the full rail while Lens is active."""
+        self.eyebrow.setText("因果证据" if active else "问题证据")
+        self.rule_array.setVisible(not active)
+        self.issue_scroll.setVisible(not active)
+        self.evidence.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Expanding if active else QtWidgets.QSizePolicy.Preferred,
+        )
 
     def present(self, state: EvidencePanelState):
         self.heading.setText(state.heading)

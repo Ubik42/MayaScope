@@ -86,6 +86,13 @@ def schedule() -> None:
             import MayaScope
             from MayaScope import __version__, launch
 
+            if self.scenario == "lens":
+                from MayaScope.examples.generate.lens_chain_scene import build_scene
+
+                self.lens_fixture = build_scene(
+                    cmds, save_to=self.output.parent / "lens-chain-showcase.ma"
+                )
+
             self.launch = launch
             self.version = __version__
             self.package_root = str(Path(MayaScope.__file__).resolve().parent)
@@ -108,6 +115,8 @@ def schedule() -> None:
                 self.prepare_runtime_cancel_scenario()
             elif self.scenario == "project-gate":
                 self.prepare_project_gate_scenario()
+            elif self.scenario == "lens":
+                self.prepare_lens_scenario()
             self.screenshot.parent.mkdir(parents=True, exist_ok=True)
             saved = bool(self.first.grab().save(str(self.screenshot)))
             parent = self.first.parentWidget()
@@ -305,6 +314,47 @@ def schedule() -> None:
                 "阻断场景": summary["blocked_scene_count"],
                 "原子发现": summary["atomic_finding_count"],
                 "聚焦阻断镜头": self.first.project_gate.canvas._selected == 1,
+                "Maya 修改状态未改变": bool(cmds.file(query=True, modified=True)) == modified_before,
+            }
+
+        def prepare_lens_scenario(self):
+            snapshot = self.first._snapshot
+            focus = next(
+                (node for node in snapshot.nodes if node.name == self.lens_fixture["focus"]),
+                None,
+            )
+            if focus is None:
+                raise RuntimeError("真实 Maya 快照没有收录根因透镜焦点")
+            modified_before = bool(cmds.file(query=True, modified=True))
+            self.first.lens_bar.set_direction("upstream")
+            self.first.lens_bar.depth_spin.setValue(4)
+            self.first._activate_focus(focus.id)
+            QtWidgets.QApplication.processEvents()
+            report = self.first._lens_report
+            selected = self.first._selected_candidate
+            expected_names = {"heroRoot", "globalMatrix", "spaceDecompose", "faceDriver"}
+            candidate_names = {
+                snapshot.node_map[candidate.node_id].name for candidate in report.candidates
+            } if report else set()
+            self.checks["真实根因透镜"] = {
+                "通过": bool(
+                    report
+                    and report.direction == "upstream"
+                    and len(report.candidates) >= 4
+                    and expected_names.issubset(candidate_names)
+                    and selected is not None
+                    and self.first.lens_bar.isVisible()
+                    and self.first.lens_ribbon.isVisible()
+                    and self.first.lens_bar.focus_label.text() == self.lens_fixture["focus"]
+                    and bool(cmds.file(query=True, modified=True)) == modified_before
+                ),
+                "焦点": self.first.lens_bar.focus_label.text(),
+                "追踪方向": report.direction if report else "",
+                "候选数": len(report.candidates) if report else 0,
+                "候选节点": sorted(candidate_names),
+                "已选候选": snapshot.node_map[selected.node_id].name if selected else "",
+                "控制条可见": self.first.lens_bar.isVisible(),
+                "证据带可见": self.first.lens_ribbon.isVisible(),
                 "Maya 修改状态未改变": bool(cmds.file(query=True, modified=True)) == modified_before,
             }
 

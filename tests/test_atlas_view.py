@@ -7,6 +7,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from MayaScope.analysis.rules import Evidence, Issue, Severity
+from MayaScope.analysis.lens import build_root_cause_report
 from MayaScope.model import SceneEdge, SceneNode, SceneSnapshot
 from MayaScope.qt_compat import QtWidgets
 from MayaScope.ui.atlas import MAX_RENDER_NODES, SpectralAtlasView
@@ -75,6 +76,22 @@ class SpectralAtlasViewTests(unittest.TestCase):
         self.assertTrue(self.view._timer.isActive())
         self.view.set_motion_enabled(False)
         self.assertFalse(self.view._timer.isActive())
+
+    def test_lens_turns_selected_causal_path_into_a_readable_lane_and_restores_it(self):
+        snapshot = self._snapshot(5)
+        self.view.set_snapshot(snapshot, ())
+        original = {node_id: item.pos() for node_id, item in self.view._node_items.items()}
+        report = build_root_cause_report(snapshot, "4")
+        candidate = next(item for item in report.candidates if item.node_id == "0")
+        self.view.show_lens(report, candidate)
+        path_positions = [self.view._node_items[node_id].pos() for node_id in candidate.path_node_ids]
+        self.assertEqual({position.y() for position in path_positions}, {0.0})
+        self.assertEqual([position.x() for position in path_positions], sorted(position.x() for position in path_positions))
+        self.view.clear_lens()
+        self.assertEqual(
+            {node_id: item.pos() for node_id, item in self.view._node_items.items()},
+            original,
+        )
 
 
 class UiBoundarySourceTests(unittest.TestCase):

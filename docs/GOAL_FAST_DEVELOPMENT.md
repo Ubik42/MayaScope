@@ -575,3 +575,20 @@ Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordin
 12. `ui/workspace.py` 从 3965 行降至 3639 行；`ui/project_gate.py` 278 行，`presentation/project_gate.py` 263 行。这里完成的是项目门禁视图与呈现边界，队列执行器仍保留独立签名状态机和 Worker。
 
 整个 `/goal` 继续保持 active；下一阶段优先拆分 Root Cause Lens 的控制条与候选视图，或补齐黄金调查路径的连续截图/教程证据；以当前完成审计中暴露的最高风险项为准。
+
+## 第四十里程碑进度（完成：Root Cause Lens 因果走廊与真实绑定驱动夹具）
+
+1. 新增宿主无关 `presentation.lens`，把结构/实测报告转换为不可变中文卡片、摘要、状态与候选证据，不导入 Maya、PySide、Collector 或 Workspace。
+2. Presenter 会拒绝陈旧焦点、重复或外部候选、路径方向不一致、Plug 路径漂移，以及实测/结构候选代次不一致；不会为了画界面猜测缺失证据。
+3. `LensControlBar`、`LensCandidateCard` 与 `LensRibbon` 迁入 `ui/lens.py`，独立拥有方向、深度、中文动作、键盘激活、可访问名称和紧凑模式。
+4. Scene Clinic 进入 Lens 时收起普通规则阵列，把右侧空间完整让给因果路径、Plug 证据和评分因素；关闭后恢复原问题视图。
+5. Atlas 将候选按真实 DG 距离动态排成水平因果走廊；fan-out 同距离候选自动进入分层车道，选定路径以动态虚线强调，关闭 Lens 后恢复原节点位置。
+6. `examples/generate/lens_chain_scene.py` 在 Maya 2025 中生成并保存 `heroRoot → globalMatrix → spaceDecompose → faceDriver → heroFace_CTRL`，同时让 `faceDriver` 驱动第二控制器形成真实分支证据。
+7. GUI 生命周期新增 `lens` 场景，核对四个候选身份、方向、焦点、控制条、证据带和 Maya modified 状态，并继续完成重复启动、热重载、回调/计时器释放和菜单卸载。
+8. 1480 × 900 真机 PID 48016 与 800 × 900 真机 PID 29880 均通过；启动前已有 Maya PID 58104 在每轮结束后保持同一身份。
+9. 新增宽窄真实截图、黄金路径教程、生成素材说明和干净安装场景入口；界面用户可见文案保持简体中文，节点名按 Maya 制作规范使用短英文。
+10. 普通 Python 256 项通过（19 项宿主限定跳过），同一套 256 项在 Maya 2025 `mayapy` 全部通过；新增 Presenter、View、动态布局恢复与真实宿主回归。`ui/workspace.py` 从 3639 行降至 3415 行。
+11. 候选 ZIP 的隔离 Module 回放 PID 39572 只从临时解压包导入并完成同一 `lens` 场景；随后验证可恢复卸载、备份恢复、最终卸载和临时目录清理，用户 Maya PID 58104 保持原身份。
+
+整个 `/goal` 继续保持 active；下一阶段优先把 Runtime/Profiler 采集编排进一步移出 Workspace，或对
+Atlas 大图增量布局和渲染预算做下一条真实制作纵切；不继续扩张展示版功能面。

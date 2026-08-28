@@ -50,6 +50,27 @@ unloaded-references
 7. 故障棱镜只针对该场景的可丢弃副本演示；确认 `.ma` pre-open、串行 hidden Probe、
    Journal resume 和 Repro Capsule，不在唯一展示文件上制造故障。
 
+## 根因透镜黄金路径
+
+`examples/generate/lens_chain_scene.py` 在 Maya 2025 中生成并保存一个确定性的绑定驱动夹具：
+
+```text
+heroRoot → globalMatrix → spaceDecompose → faceDriver → heroFace_CTRL
+                                                    ↘ secondaryFace_CTRL
+```
+
+聚焦 `heroFace_CTRL` 后选择“上游”，Atlas 会把四级候选按 DG 距离重排为水平因果走廊。底部候选带
+同步展示结构信号与跳数；默认选中的 `faceDriver` 在右侧展示精确的
+`faceDriver.outputX → heroFace_CTRL.translateX`。评分明确不是概率，只有接入真实 Profiler 后才显示
+实测事件、包含耗时和覆盖率，而且仍不冒充预计优化收益。
+
+![根因透镜宽屏黄金路径](images/root-cause-lens-wide.png)
+
+![根因透镜 800px 窄停靠](images/root-cause-lens-narrow.png)
+
+真实宿主回归使用 `--scenario lens`。它只操作测试器创建并精确持有的 Maya，现场生成夹具、保存后
+捕获、执行追踪、截图，再验证重复启动、热重载、回调释放和退出；启动前已有 Maya 不会被附着或关闭。
+
 ## 场景制片契约演示
 
 将 `MAYASCOPE_CLINIC_CONFIG` 指向 `examples/clinic.team.json` 后启动。诊所顶部的“制片信号”带会

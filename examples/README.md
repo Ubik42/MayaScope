@@ -46,3 +46,14 @@ python -m MayaScope.examples.generate.project_gate_fixture D:\MayaScopeDemo\项�
 
 输出目录中的 `fixture-manifest.json` 记录每个场景与回执的校验值、预期结论和最终项目签名；
 `project-audit-showcase.json` 可通过 MayaScope 顶栏的 **项目门禁** 打开。
+
+## 根因透镜绑定驱动链
+
+`generate/lens_chain_scene.py` 使用真实 `maya.cmds` 生成并保存一条四级上游驱动链，并让
+`faceDriver.outputX` 同时连接 `heroFace_CTRL.translateX` 与 `secondaryFace_CTRL.translateX`。
+它用于演示“症状节点不一定是原因”：聚焦 `heroFace_CTRL` 后，Root Cause Lens 会显示四个候选、
+一条按距离排布的因果走廊、精确 Plug 路径和 fan-out 评分证据。夹具完全自生成，不含第三方资产。
+
+```powershell
+& "C:\Program Files\Autodesk\Maya2025\bin\mayapy.exe" -m MayaScope.examples.generate.lens_chain_scene D:\MayaScopeDemo\lens-chain.ma
+```

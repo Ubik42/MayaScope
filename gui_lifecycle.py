@@ -65,7 +65,7 @@ def run_gui_lifecycle(
         raise ValueError("必须提供真实 Maya GUI 可执行文件 maya.exe")
     output = output.expanduser().resolve()
     screenshot = screenshot.expanduser().resolve()
-    if scenario not in {"default", "instruments", "runtime-cancel", "project-gate"}:
+    if scenario not in {"default", "instruments", "runtime-cancel", "project-gate", "lens"}:
         raise ValueError("不支持的 Maya GUI 验收场景：%s" % scenario)
     width, height = int(width), int(height)
     if width < 800 or height < 560:
@@ -196,9 +196,9 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument(
         "--scenario",
-        choices=("default", "instruments", "runtime-cancel", "project-gate"),
+        choices=("default", "instruments", "runtime-cancel", "project-gate", "lens"),
         default="default",
-        help="可选真实交互场景；project-gate 验证三镜头签名项目门禁",
+        help="可选真实交互场景；lens 验证实际 Maya DG 因果链",
     )
     parser.add_argument("--width", type=int, default=1480)
     parser.add_argument("--height", type=int, default=900)
