@@ -18,6 +18,8 @@ from ..actions import MayaChangeExecutor, plan_for_issue, plan_for_issues
 from ..application import (
     InvestigationCoordinator,
     InvestigationTransition,
+    RuntimeCaptureController,
+    RuntimeCaptureEvent,
     resolve_host_selection,
 )
 from ..analysis.delta import SceneDelta, compare_snapshots
@@ -1248,7 +1250,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._project_queue_worker = None
         self._project_queue_cancel_event = None
         self._close_after_project_queue = False
-        self._runtime_session = None
+        self._runtime_capture = RuntimeCaptureController(
+            MayaRuntimeCaptureSession,
+            analyze_runtime,
+            cancelled_errors=(RuntimeCaptureCancelled,),
+            stale_errors=(RuntimeChangedDuringCapture,),
+        )
         self._selection_bridge = None
         self._host_identity_index = {}
         self._pending_host_selection: Tuple[str, ...] = ()
@@ -1874,36 +1881,34 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         return True
 
     def _start_runtime_capture(self):
-        if self._runtime_session is not None:
-            self._runtime_session.cancel()
-            self.runtime_button.setEnabled(False)
-            self.runtime_button.setText("正在取消…")
-            self.status.setText("  正在取消运行时采集  ·  将在下一个安全分片停止")
+        if self._runtime_capture.active:
+            event = self._runtime_capture.request_cancel()
+            if event.kind == "failed":
+                self._restore_runtime_controls()
+                self.status.setText("  运行时取消失败  ·  %s" % event.error)
+                return
+            self._render_runtime_capture_event(event)
             return
         if not self._snapshot:
             self.status.setText("  运行时采集等待中  ·  请先捕获场景")
             return
         if self._capture_session is not None or (
             self._clinic_thread and self._clinic_thread.isRunning()
-        ) or (self._bisect_thread and self._bisect_thread.isRunning()):
+        ) or (self._bisect_thread and self._bisect_thread.isRunning()) or (
+            self._project_queue_thread and self._project_queue_thread.isRunning()
+        ):
             self.status.setText("  运行时采集等待中  ·  另一项调查正在执行")
             return
         try:
-            self._runtime_session = MayaRuntimeCaptureSession(self._snapshot)
+            event = self._runtime_capture.start(self._snapshot)
         except Exception as exc:
             self.status.setText("  运行时采集失败  ·  %s" % exc)
             return
-        self.runtime_button.setText("取消运行时采集")
-        self.capture_button.setEnabled(False)
-        self.bisect_button.setEnabled(False)
-        self.clinic_array.setEnabled(False)
-        self.pulse.setEnabled(False)
-        self.status.setText("  运行时采集中  ·  正在映射执行表面")
+        self._render_runtime_capture_event(event)
         self._runtime_timer.start()
 
     def _restore_runtime_controls(self):
         self._runtime_timer.stop()
-        self._runtime_session = None
         self.runtime_button.setText("运行时")
         self.runtime_button.setEnabled(self._snapshot is not None)
         self.capture_button.setEnabled(True)
@@ -1911,42 +1916,63 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.clinic_array.setEnabled(True)
         self.pulse.setEnabled(True)
 
+    def _render_runtime_capture_event(self, event: RuntimeCaptureEvent):
+        if event.kind == "started":
+            self.runtime_button.setText("取消运行时采集")
+            self.clinic_array.setEnabled(False)
+            self.pulse.setEnabled(False)
+            self.capture_button.setEnabled(False)
+            self.bisect_button.setEnabled(False)
+            self.runtime_button.setEnabled(True)
+            self.status.setText("  运行时采集中  ·  正在映射执行表面")
+            return
+        if event.kind == "cancelling":
+            self.runtime_button.setText("正在取消…")
+            self.capture_button.setEnabled(False)
+            self.bisect_button.setEnabled(False)
+            self.clinic_array.setEnabled(False)
+            self.pulse.setEnabled(False)
+            self.runtime_button.setEnabled(False)
+            self.status.setText("  正在取消运行时采集  ·  将在下一个安全分片停止")
+            return
+        if event.kind == "progress":
+            stage = {
+                "expressions": "表达式",
+                "plugins": "插件",
+                "callbacks": "回调",
+                "verify": "验证",
+                "finalize": "封存",
+            }.get(event.stage, event.stage)
+            self.status.setText(
+                "  运行时采集中  ·  %s  %s/%s"
+                % (stage, event.completed, event.total)
+            )
+
     def _advance_runtime_capture(self):
-        session = self._runtime_session
-        if session is None:
+        if not self._runtime_capture.active:
             self._runtime_timer.stop()
             return
-        try:
-            progress = session.step(max_items=96, max_milliseconds=7.0)
-        except RuntimeCaptureCancelled:
+        event = self._runtime_capture.advance(self._snapshot)
+        if not event.terminal:
+            self._render_runtime_capture_event(event)
+            return
+        if event.kind == "cancelled":
             self._restore_runtime_controls()
             self.status.setText("  运行时采集已取消  ·  已保留上次清单")
             return
-        except RuntimeChangedDuringCapture as exc:
+        if event.kind == "stale":
             self._restore_runtime_controls()
-            self.status.setText("  运行时证据已失效  ·  %s" % exc)
+            self.status.setText("  运行时证据已失效  ·  %s" % event.error)
             return
-        except Exception as exc:
+        if event.kind == "failed":
             self._restore_runtime_controls()
-            self.status.setText("  运行时采集失败  ·  %s" % exc)
+            self.status.setText("  运行时采集失败  ·  %s" % event.error)
             return
-        if not session.done:
-            self.status.setText(
-                "  运行时采集中  ·  %s  %s/%s"
-                % (
-                    {"expressions": "表达式", "plugins": "插件", "callbacks": "回调", "verify": "验证", "finalize": "封存"}.get(progress.stage, progress.stage),
-                    progress.completed,
-                    progress.total,
-                )
-            )
-            return
-        runtime = session.result
-        report = analyze_runtime(runtime, self._snapshot)
         try:
             transition = self._investigation.accept_runtime(
                 self._presentation,
-                runtime,
-                report,
+                event.runtime,
+                event.report,
             )
         except Exception as exc:
             self._restore_runtime_controls()
@@ -1954,7 +1980,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             return
         self._apply_investigation_transition(transition)
         self._restore_runtime_controls()
-        self.runtime_constellation.set_report(runtime, report)
+        self.runtime_constellation.set_report(event.runtime, event.report)
         self._focus_runtime()
 
     def _focus_runtime(self):
@@ -2325,11 +2351,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             button.setEnabled(True)
         self.clinic_array._sync_run_state()
         self.clinic_array.run_button.setText("扫描快照")
-        self.capture_button.setEnabled(True)
         self.capture_button.setText("捕获场景")
-        self.bisect_button.setEnabled(True)
-        self.runtime_button.setEnabled(self._snapshot is not None)
-        self.pulse.setEnabled(True)
+        if not self._runtime_capture.active:
+            self.capture_button.setEnabled(True)
+            self.bisect_button.setEnabled(True)
+            self.runtime_button.setEnabled(self._snapshot is not None)
+            self.pulse.setEnabled(True)
         self._capture_required = False
         self._clinic_worker = None
         self._clinic_thread = None
@@ -2959,7 +2986,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.status.setText("  故障二分已停止  ·  %s" % message)
 
     def _on_bisect_thread_finished(self):
-        self.bisect_button.setEnabled(True)
+        if not self._runtime_capture.active:
+            self.bisect_button.setEnabled(True)
         self._bisect_worker = None
         self._bisect_thread = None
         if self._close_after_bisect:
@@ -3004,10 +3032,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._selection_sync_timer.stop()
         if self._selection_bridge is not None:
             self._selection_bridge.stop()
-        if self._runtime_session is not None:
+        if self._runtime_capture.active:
             self._runtime_timer.stop()
-            self._runtime_session.cancel()
-            self._runtime_session = None
+            self._runtime_capture.abort()
         if self._capture_session is not None:
             self._capture_timer.stop()
             self._capture_session.cancel()
@@ -3594,7 +3621,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             (self._clinic_thread and self._clinic_thread.isRunning())
             or (self._bisect_thread and self._bisect_thread.isRunning())
             or self._capture_session is not None
-            or self._runtime_session is not None
+            or self._runtime_capture.active
         ):
             self.status.setText("  批量审计等待中  ·  请先完成当前场景任务")
             return
@@ -3800,9 +3827,10 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.project_queue_button.setEnabled(True)
         self.project_queue_button.setText("批量审计")
         self.project_queue_button.setToolTip("打开签名场景计划并在后台串行审计")
-        self.capture_button.setEnabled(True)
-        self.bisect_button.setEnabled(True)
-        self.runtime_button.setEnabled(self._snapshot is not None)
+        if not self._runtime_capture.active:
+            self.capture_button.setEnabled(True)
+            self.bisect_button.setEnabled(True)
+            self.runtime_button.setEnabled(self._snapshot is not None)
         self.clinic_array._sync_run_state()
         if self._close_after_project_queue:
             self._close_after_project_queue = False

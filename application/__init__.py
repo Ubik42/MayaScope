@@ -15,6 +15,11 @@ from .investigation import (
     InvestigationTransition,
     resolve_host_selection,
 )
+from .runtime_capture import (
+    RuntimeCaptureController,
+    RuntimeCaptureEvent,
+    RuntimeCaptureStateError,
+)
 
 __all__ = [
     "AtlasClearIntent",
@@ -29,5 +34,8 @@ __all__ = [
     "InvestigationCoordinator",
     "InvestigationStateError",
     "InvestigationTransition",
+    "RuntimeCaptureController",
+    "RuntimeCaptureEvent",
+    "RuntimeCaptureStateError",
     "resolve_host_selection",
 ]

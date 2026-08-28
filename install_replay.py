@@ -205,7 +205,9 @@ def main(argv=None) -> int:
     parser.add_argument("--screenshot", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument(
-        "--scenario", choices=("default", "instruments"), default="default"
+        "--scenario",
+        choices=("default", "instruments", "runtime-cancel"),
+        default="default",
     )
     parser.add_argument("--width", type=int, default=1480)
     parser.add_argument("--height", type=int, default=900)

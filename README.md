@@ -119,6 +119,18 @@ python -m MayaScope.gui_lifecycle `
   --scenario instruments --width 800 --height 900
 ```
 
+若本次修改涉及分片采集、取消或控件恢复，可运行专门的安全取消场景。探针会在真实 Maya 中启动
+Runtime 采集、冻结到可截图的“正在取消…”状态，再推进下一个安全分片；验收会确认采集守卫释放、
+所有入口恢复、上次有效证据未被覆盖，并且 Maya modified 状态不变：
+
+```powershell
+python -m MayaScope.gui_lifecycle `
+  --maya "C:\Program Files\Autodesk\Maya2025\bin\maya.exe" `
+  --output mayascope-runtime-cancel.json `
+  --screenshot mayascope-runtime-cancel.png `
+  --scenario runtime-cancel --width 1480 --height 900
+```
+
 还可以从最终 Release ZIP 完整复演一次干净安装。该命令会验证清单、解压到临时目录、安装隔离
 Maya Module，并在清空开发 `PYTHONPATH` / `MAYA_MODULE_PATH` 后启动真实 Maya；回执会记录
 Maya 实际导入的包目录，再依次验证可恢复卸载、备份恢复、最终卸载和临时目录清理：
@@ -132,7 +144,8 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
 
 这项验证专门防止“发布包看似安装成功，真实 Maya 实际仍从开发源码目录导入”的假通过。
 发布候选若修改了 Profiler/Runtime，可追加 `--scenario instruments`，让临时安装副本真实完成采集、
-仪器截图和清除恢复；`--width 800 --height 900` 可把同一闭环作为窄停靠验收。
+仪器截图和清除恢复；修改 Runtime 会话控制时使用 `--scenario runtime-cancel`。`--width 800
+--height 900` 可把同一闭环作为窄停靠验收。
 
 Scene Clinic 也可作为只读 CI / 发布门禁运行。它只启动一个隐藏 Maya 2025 进程，打开场景时
 禁用 script node 执行，并在前后校验源文件 SHA-256：

@@ -541,3 +541,20 @@ Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordin
 
 整个 `/goal` 继续保持 active；下一阶段优先把 Runtime 分片采集、取消、控件锁定与关闭等待组织成
 可测试的 Application 会话控制器，再评估 Lens Ribbon 或 Project Gate 的下一次低风险视图拆分。
+
+## 第三十八里程碑进度（完成：Runtime 分片会话控制器与真实取消闭环）
+
+1. 新增宿主无关 `application.RuntimeCaptureController`；Maya Collector、分析器和异常类型均从装配根注入，不导入 PySide、Maya 或 UI。
+2. 控制器独占采集会话、源快照身份、取消请求和分片预算，输出 `started/progress/cancelling/cancelled/stale/failed/completed` 七类不可变语义事件。
+3. 场景代次在下一分片前变化会立即取消并释放守卫；Runtime 身份不一致时不进入分析器，分析异常也保证回到空闲态。
+4. 取消请求幂等；完成前明确取消的部分结果绝不会覆盖上次有效 Runtime 证据，宿主关闭通过同步 `abort` 清理。
+5. Workspace 只负责将语义事件渲染为自然中文状态和动态控件锁定，不再直接持有或推进 `MayaRuntimeCaptureSession`。
+6. 真机探针暴露并修复一个异步竞争：Clinic/二分/项目队列的延迟完成回调不得在 Runtime 活跃时重新启用入口；Runtime 也不再与项目队列并发启动。
+7. 新增 `runtime-cancel` GUI 场景：真实启动 Runtime、冻结“正在取消…”状态截图、推进下一安全分片，再验证五组控件恢复、旧证据保留和 Maya modified 状态不变。
+8. 普通 Python 238 项通过（19 项宿主限定跳过）；Maya 2025 mayapy 的 Collector/Controller 11 项定向测试通过。
+9. 源码真机 PID 58316 在 19.715 秒内完成取消、恢复、重复启动、热重载和关闭；真实中文 1480 × 900 截图显示工具栏取消态与底部安全分片提示。
+10. 候选 ZIP 的隔离 Module 回放 PID 8176 在 22.884 秒内自行退出；包来源核对、取消恢复、备份恢复、最终卸载和临时目录清理全部通过。
+11. `application/runtime_capture.py` 为 217 行；它完成的是 Runtime 会话编排边界，Runtime 生产视图仍由 `ui/runtime.py` 独立拥有，Qt 定时调度仍留在宿主装配层。
+
+整个 `/goal` 继续保持 active；下一阶段优先拆分 Lens Ribbon 或 Project Gate 的生产视图与应用状态，
+同时保持当前发布面收口，不为展示版继续扩大长周期功能范围。

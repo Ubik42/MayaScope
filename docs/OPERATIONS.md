@@ -473,6 +473,10 @@ python -m MayaScope.gui_lifecycle `
 回执额外记录事件数、节点映射、Runtime 信号、清除按钮复位、派生证据失效、Runtime 保留以及 Maya
 modified 状态前后一致。默认场景不执行这些额外操作，干净安装回放继续使用默认生命周期。
 
+`--scenario runtime-cancel` 专门覆盖 Runtime 分片采集的取消路径。探针先启动真实采集并冻结取消态
+截图，再推进一个安全分片，确认控制器释放 Maya 回调守卫、运行时/捕获/诊所入口恢复、旧证据仍在，
+且场景 modified 状态没有变化。该场景也会继续完成重复启动、开发热重载、计时器归零和菜单卸载。
+
 探针依次检查首次绘制与捕获、重复启动只保留一个可见工作区、开发热重载先关闭旧窗口、选择回调
 移除、全部动态计时器停止、菜单卸载和宿主退出。超时时只在 PID、启动 ticks 和可执行路径仍与本次
 创建身份完全一致时终止进程。最终回执同时证明测试进程已经结束、启动前 Maya 身份逐一保持不变。
@@ -510,7 +514,8 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
   --timeout 100
 ```
 
-涉及 Profiler/Runtime 视图或状态恢复的候选包使用 `--scenario instruments`；该参数会原样传给从
+涉及 Profiler/Runtime 视图或状态恢复的候选包使用 `--scenario instruments`；涉及 Runtime 会话、
+取消和控件恢复时使用 `--scenario runtime-cancel`。该参数会原样传给从
 临时 Module 启动的真实 GUI 探针，因此能证明仪器闭环来自 ZIP 解压副本，而不是开发源码。可同时
 传入 `--width 800 --height 900` 验证窄停靠。
 

@@ -33,7 +33,7 @@ def schedule() -> None:
         def __init__(self):
             super().__init__()
             self.started = time.perf_counter()
-            self.deadline = self.started + 45.0
+            self.deadline = self.started + 70.0
             self.output = Path(os.environ["MAYASCOPE_GUI_LIFECYCLE_WORKER"])
             self.screenshot = Path(os.environ["MAYASCOPE_GUI_LIFECYCLE_SCREENSHOT"])
             self.checks = {}
@@ -73,7 +73,7 @@ def schedule() -> None:
                 and window.isVisible()
                 and window._snapshot is not None
                 and window._capture_session is None
-                and not (window._clinic_thread and window._clinic_thread.isRunning())
+                and window._clinic_thread is None
             )
 
         def wait_ready(self, window, callback):
@@ -104,6 +104,8 @@ def schedule() -> None:
         def after_first(self):
             if self.scenario == "instruments":
                 self.prepare_instrument_scenario()
+            elif self.scenario == "runtime-cancel":
+                self.prepare_runtime_cancel_scenario()
             self.screenshot.parent.mkdir(parents=True, exist_ok=True)
             saved = bool(self.first.grab().save(str(self.screenshot)))
             parent = self.first.parentWidget()
@@ -129,6 +131,8 @@ def schedule() -> None:
             }
             if self.scenario == "instruments":
                 self.verify_instrument_clear()
+            elif self.scenario == "runtime-cancel":
+                self.verify_runtime_cancel()
             old = self.first
             self.second = self.launch.run("workspace")
             self.second.resize(*self.window_size)
@@ -223,6 +227,52 @@ def schedule() -> None:
                 "Runtime 证据仍保留": self.first._runtime_snapshot is self.instrument_runtime,
                 "清除按钮已归位": self.first.pulse.clear_button.isHidden(),
                 "Maya 修改状态未改变": modified_after == self.instrument_modified_before_clear,
+            }
+
+        def prepare_runtime_cancel_scenario(self):
+            self.runtime_before_cancel = self.first._runtime_snapshot
+            self.runtime_modified_before_cancel = bool(
+                cmds.file(query=True, modified=True)
+            )
+            self.first._start_runtime_capture()
+            self.first._runtime_timer.stop()
+            self.first._start_runtime_capture()
+            QtWidgets.QApplication.processEvents()
+            self.checks["运行时取消交互"] = {
+                "通过": bool(
+                    self.first._runtime_capture.cancelling
+                    and not self.first.runtime_button.isEnabled()
+                    and self.first.runtime_button.text() == "正在取消…"
+                    and not self.first.capture_button.isEnabled()
+                    and not self.first.clinic_array.isEnabled()
+                ),
+                "控制器正在取消": self.first._runtime_capture.cancelling,
+                "取消按钮已锁定": not self.first.runtime_button.isEnabled(),
+                "按钮文案": self.first.runtime_button.text(),
+                "捕获入口已锁定": not self.first.capture_button.isEnabled(),
+                "诊所入口已锁定": not self.first.clinic_array.isEnabled(),
+            }
+
+        def verify_runtime_cancel(self):
+            self.first._advance_runtime_capture()
+            QtWidgets.QApplication.processEvents()
+            modified_after = bool(cmds.file(query=True, modified=True))
+            self.checks["运行时取消恢复"] = {
+                "通过": bool(
+                    not self.first._runtime_capture.active
+                    and self.first.runtime_button.isEnabled()
+                    and self.first.runtime_button.text() == "运行时"
+                    and self.first.capture_button.isEnabled()
+                    and self.first.clinic_array.isEnabled()
+                    and self.first._runtime_snapshot is self.runtime_before_cancel
+                    and modified_after == self.runtime_modified_before_cancel
+                ),
+                "采集会话已释放": not self.first._runtime_capture.active,
+                "运行时入口已恢复": self.first.runtime_button.isEnabled(),
+                "捕获入口已恢复": self.first.capture_button.isEnabled(),
+                "诊所入口已恢复": self.first.clinic_array.isEnabled(),
+                "上次证据未被覆盖": self.first._runtime_snapshot is self.runtime_before_cancel,
+                "Maya 修改状态未改变": modified_after == self.runtime_modified_before_cancel,
             }
 
         def after_second(self):
