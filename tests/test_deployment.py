@@ -5,7 +5,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from MayaScope.deployment import install_module, inspect_module, uninstall_module
+from MayaScope.deployment import (
+    install_module,
+    inspect_module,
+    restore_module,
+    uninstall_module,
+)
 from MayaScope.install import main
 
 
@@ -19,16 +24,51 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(inspect_module(module_dir).state, "installed")
             self.assertIn("+ MayaScope 3.0.0", target.read_text(encoding="utf-8"))
             self.assertIn("PYTHONPATH +:= .", target.read_text(encoding="utf-8"))
+            idempotent = install_module(module_dir)
+            self.assertEqual(idempotent.backup_file, "")
 
-            target.write_text(target.read_text() + "# stale\n", encoding="utf-8")
+            stale = target.read_text() + "# stale\n"
+            target.write_text(stale, encoding="utf-8")
             self.assertEqual(inspect_module(module_dir).state, "update-available")
-            install_module(module_dir)
+            upgraded = install_module(module_dir)
             self.assertEqual(inspect_module(module_dir).state, "installed")
+            self.assertTrue(Path(upgraded.backup_file).is_file())
+            self.assertEqual(Path(upgraded.backup_file).read_text(), stale)
 
             removed = uninstall_module(module_dir)
             self.assertEqual(removed.state, "uninstalled")
             self.assertFalse(target.exists())
             self.assertTrue(Path(removed.backup_file).is_file())
+
+            restored = restore_module(Path(removed.backup_file), module_dir)
+            self.assertEqual(restored.state, "restored")
+            self.assertTrue(target.is_file())
+            self.assertTrue(Path(removed.backup_file).is_file())
+            self.assertEqual(inspect_module(module_dir).state, "installed")
+
+            rolled_back = restore_module(Path(upgraded.backup_file), module_dir)
+            self.assertTrue(Path(rolled_back.rollback_file).is_file())
+            self.assertTrue(Path(upgraded.backup_file).is_file())
+            self.assertEqual(target.read_text(), stale)
+            restore_module(Path(removed.backup_file), module_dir)
+            self.assertEqual(inspect_module(module_dir).state, "installed")
+
+    def test_restore_refuses_foreign_or_out_of_directory_backup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            module_dir = root / "modules"
+            module_dir.mkdir()
+            foreign = module_dir / "MayaScope.mod.uninstalled-foreign.bak"
+            foreign.write_text("+ SomeoneElse 1.0 C:/foreign\n", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "not managed"):
+                restore_module(foreign, module_dir)
+
+            outside = root / "MayaScope.mod.uninstalled-outside.bak"
+            outside.write_text(
+                "# MAYASCOPE-MANAGED-MODULE schema=1\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "target module directory"):
+                restore_module(outside, module_dir)
 
     def test_foreign_module_is_never_overwritten_or_removed(self):
         with tempfile.TemporaryDirectory() as folder:

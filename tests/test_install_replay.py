@@ -58,6 +58,7 @@ class InstallReplayTests(unittest.TestCase):
                 payload["isolated_environment"]["temporary_root_cleaned"]
             )
             self.assertEqual(payload["recovered_status"]["state"], "installed")
+            self.assertEqual(payload["restore"]["state"], "restored")
             self.assertEqual(payload["final_status"]["state"], "not-installed")
             self.assertTrue(output.is_file())
             self.assertEqual(payload["scenario"], "instruments")

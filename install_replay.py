@@ -38,16 +38,21 @@ def _run_installer(
     module_dir: Path,
     action: str,
     working_directory: Path,
+    *,
+    backup: Path | None = None,
 ) -> dict:
+    command = [
+        sys.executable,
+        "-m",
+        "MayaScope.install",
+        action,
+        "--module-dir",
+        str(module_dir),
+    ]
+    if backup is not None:
+        command.extend(("--backup", str(backup)))
     result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "MayaScope.install",
-            action,
-            "--module-dir",
-            str(module_dir),
-        ],
+        command,
         cwd=str(working_directory),
         env=_installer_environment(extraction_root),
         capture_output=True,
@@ -137,7 +142,13 @@ def run_install_replay(
         backup_created = backup.is_file() and not target.exists()
         if not backup_created:
             raise RuntimeError("卸载没有留下可恢复的 Module 备份")
-        os.replace(str(backup), str(target))
+        restored = _run_installer(
+            extraction_root,
+            module_dir,
+            "restore",
+            sandbox,
+            backup=backup,
+        )
         recovered = _run_installer(extraction_root, module_dir, "status", sandbox)
         removed_final = _run_installer(
             extraction_root, module_dir, "uninstall", sandbox
@@ -181,6 +192,7 @@ def run_install_replay(
             "scenario": scenario,
             "window_size": [int(width), int(height)],
             "uninstall": removed,
+            "restore": restored,
             "recovered_status": recovered,
             "final_uninstall": removed_final,
             "final_status": final_status,

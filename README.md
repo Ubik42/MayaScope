@@ -101,6 +101,14 @@ python -m MayaScope.install install
 python -m MayaScope.doctor
 ```
 
+安装器现在对升级和卸载都保留可恢复备份。恢复时必须显式指定目标备份，安装器会验证它确实位于
+当前 Maya 2025 Module 目录且由 MayaScope 管理，不会猜测“最新文件”或覆盖同名第三方 Module：
+
+```powershell
+python -m MayaScope.install restore `
+  --backup "$env:USERPROFILE\Documents\maya\2025\modules\MayaScope.mod.uninstalled-时间戳.bak"
+```
+
 显式 Shelf 安装和真实展示场景说明见 [`docs/SHOWCASE.md`](docs/SHOWCASE.md)。
 
 发布前可运行一次独立的真实 GUI 生命周期验证；它使用隔离 `MAYA_APP_DIR`、隐藏窗口和精确 PID

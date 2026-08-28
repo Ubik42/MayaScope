@@ -20,18 +20,22 @@ python -m MayaScope.doctor
 `MAYA_APP_DIR`，则使用该目录下的 `2025\modules`。`doctor` 会启动一个隐藏、离屏、短生命周期
 的 Maya 2025 `mayapy`，验证 Maya/API、PySide6 和 MayaScope 导入，不打开 Maya 主界面。
 
-升级同一受管 Module 可重复执行 `install`。工程仍从 `D:\3D\_tools\MayaScope` 加载，因此代码
-更新后不需要复制文件；重启 Maya 或显式 reload 包即可载入新版。
+升级同一受管 Module 可重复执行 `install`。内容发生变化时，旧 Module 会先原子保存为
+`MayaScope.mod.pre-upgrade-*.bak`；完全相同的重复安装保持幂等，不制造无意义备份。工程仍从
+当前安装位置加载；重启 Maya 或显式 reload 包即可载入新版。
 
 ## 3. 卸载与恢复安装
 
 ```powershell
 python -m MayaScope.install uninstall
+python -m MayaScope.install restore --backup <明确的备份文件路径>
 ```
 
 卸载不是删除：Module 会重命名为带 UTC 时间戳的
-`MayaScope.mod.uninstalled-*.bak`。需要恢复时，在 Maya 关闭后把该备份改回
-`MayaScope.mod`。安装器不会删除任何历史备份。
+`MayaScope.mod.uninstalled-*.bak`。需要恢复时，在 Maya 关闭后把该备份的完整路径交给
+`restore`。恢复器只接受目标 Module 目录内、文件名和受管标记均正确的备份；遇到第三方同名
+Module 会拒绝覆盖。恢复采用原子写入且不消费原备份；若恢复时已有另一份受管 Module，还会先
+留下 `pre-restore` 回退点。安装器不会自动删除历史备份。
 
 ## 4. Crash Bisect 中断恢复
 
