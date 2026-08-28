@@ -63,7 +63,9 @@ Runtime 分片控制器落地后，SceneSnapshot 捕获也已迁入宿主无关�
 轨迹迁入 `ui/bisect.py`；主窗口只编排真实后台进程生命周期。`ui/workspace.py` 当前 3209 行，
 随后又把 Regression Rift 的门禁、性能配对、Finding 计数、Atlas 高亮与中文正文统一到
 `presentation/regression.py`，自绘条带迁入 `ui/regression.py`；字段残缺的配对证据会在呈现前拒绝。
-`ui/workspace.py` 当前 3039 行，下一项架构重点是 Counterfactual/Delta 表面或项目队列剩余应用状态，
+Counterfactual Spectrum 随后迁入 `ui/counterfactual.py`，纯 `presentation/counterfactual.py` 会在
+调查状态切换前拒绝不连续、重复或缺少任一条件的 AB/BA 配对，并统一条带、证据正文、节点解释、
+恢复回执和归档信息。`ui/workspace.py` 当前 2853 行，下一项架构重点是 Delta 表面或项目队列剩余应用状态，
 不扩大展示版功能面。
 
 当前宿主策略：展示版只以 Maya 2025 + PySide6 为开发和验收基线。先把一个版本的

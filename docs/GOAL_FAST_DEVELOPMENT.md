@@ -671,3 +671,21 @@ Atlas 大图增量布局和渲染预算做下一条真实制作纵切；不继�
 
 整个 `/goal` 继续保持 active；下一阶段优先把 Counterfactual/Delta 遗留表面迁出主窗口，或把项目
 队列剩余编排迁入 Application，用实际耦合和失败风险决定。
+
+## 第四十六里程碑进度（完成：Counterfactual Spectrum Presenter / View 边界）
+
+1. 新增宿主无关 `presentation.counterfactual`，把完整 AB/BA 配对、改善/变慢/证据不足结论、置信
+   区间、节点包含耗时、恢复回执和证据归档统一为不可变中文状态。
+2. Presenter 会拒绝空样本、重复条件、不连续序号及缺少 baseline/variant 的报告；Workspace 在验证
+   成功后才应用 Coordinator transition，避免无效实验造成部分状态写入。
+3. 原有成对双柱、发光描边和动态扫描线迁入 `ui/counterfactual.py`，继续使用同一光谱视觉和 45 ms
+   动效节奏；reduced-motion 停止视图自己的计时器。
+4. View 不再解释领域报告，条带、右侧证据和状态栏消费同一个 Presenter 状态；Workspace 只保留
+   Coordinator 接收、节点名称映射和归档回执装配。
+5. `ui/workspace.py` 从 3039 行降至 2853 行；新增 `ui/counterfactual.py` 135 行、
+   `presentation/counterfactual.py` 153 行。这是单一业务边界迁移，不冒充主窗口重构完成。
+6. 新增 5 项 Presenter/View/依赖方向回归；普通 Python 291 项通过（19 项宿主限定跳过）。本轮不改
+   UI 视觉、不启动真实 Maya，不新增宿主通过声明。
+
+整个 `/goal` 继续保持 active；下一阶段优先迁移 Delta 遗留表面，或把项目队列剩余编排迁入
+Application，用实际耦合和失败风险决定，不扩张展示版功能面。

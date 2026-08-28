@@ -85,6 +85,9 @@ Failure Prism 同样不再定义在主窗口：`presentation/bisect.py` 产生�
 签名回归也采用同一边界：`presentation/regression.py` 一次校验门禁、性能配对、Finding 计数与节点
 身份，再把同一状态交给 `ui/regression.py`、Atlas、证据栏和状态栏；字段残缺的性能报告会在任何
 界面状态写入前被拒绝，不留下半呈现结果。
+Counterfactual Spectrum 也已从主窗口拆出：`presentation/counterfactual.py` 先验证连续且完整的
+AB/BA 配对，再统一生成中文结论、置信区间、节点包含耗时解释、恢复回执与证据归档；
+`ui/counterfactual.py` 只渲染同一个不可变状态，并保留原有双柱光谱、扫描线和动态交互。
 
 ## 启动新版调查工作区
 

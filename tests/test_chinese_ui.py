@@ -27,6 +27,7 @@ class ChineseInterfaceTests(unittest.TestCase):
                 "capture.py",
                 "bisect.py",
                 "regression.py",
+                "counterfactual.py",
             )
         )
         required = (

@@ -42,6 +42,13 @@ from .regression import (
     empty_regression_rift,
     present_regression_report,
 )
+from .counterfactual import (
+    CounterfactualPairState,
+    CounterfactualPresentationError,
+    CounterfactualViewState,
+    empty_counterfactual,
+    present_counterfactual_report,
+)
 
 __all__ = [
     "ClinicEvidencePresenter",
@@ -77,4 +84,9 @@ __all__ = [
     "RegressionRiftState",
     "empty_regression_rift",
     "present_regression_report",
+    "CounterfactualPairState",
+    "CounterfactualPresentationError",
+    "CounterfactualViewState",
+    "empty_counterfactual",
+    "present_counterfactual_report",
 ]

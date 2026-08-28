@@ -36,7 +36,6 @@ from ..analysis.lens import RootCauseCandidate
 from ..analysis.runtime import analyze_runtime
 from ..analysis.pulse import node_stats
 from ..analysis.rules import Issue, Severity
-from ..analysis.counterfactual import CounterfactualReport
 from ..analysis.ddmin import DeltaDebugStep
 from ..collectors import (
     CaptureCancelled,
@@ -58,6 +57,7 @@ from ..presentation import (
     WorkspacePresentationState,
     present_lens_candidate,
     present_lens_result,
+    present_counterfactual_report,
     present_regression_report,
 )
 from ..qt_compat import QtCore, QtGui, QtWidgets
@@ -72,6 +72,7 @@ from .atlas import MAX_RENDER_NODES, SpectralAtlasView
 from .bisect import BisectPrism
 from .clinic import SceneClinicView
 from .capture import SceneCaptureStrip
+from .counterfactual import CounterfactualStrip
 from .foundation import (
     COLORS,
     confirm_action as _confirm_action,
@@ -158,140 +159,6 @@ class DeltaStrip(QtWidgets.QFrame):
         self.setVisible(True)
 
 
-
-
-class CounterfactualSpark(QtWidgets.QWidget):
-    """Paired AB/BA measurements as a compact spectral barcode."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumWidth(210)
-        self.setMaximumWidth(310)
-        self.setFixedHeight(50)
-        self._report: Optional[CounterfactualReport] = None
-        self._phase = 0.0
-        self._timer = QtCore.QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(45)
-
-    def set_report(self, report: CounterfactualReport):
-        self._report = report
-        self.update()
-
-    def set_motion_enabled(self, enabled: bool):
-        if enabled:
-            self._timer.start(45)
-        else:
-            self._timer.stop()
-            self._phase = 0.0
-            self.update()
-
-    def _tick(self):
-        self._phase = (self._phase + 0.018) % 1.0
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QtGui.QColor("#0A0810"))
-        report = self._report
-        if not report:
-            return
-        pairs = {}
-        for item in report.observations:
-            pairs.setdefault(item.pair_index, {})[item.condition] = item.wall_time_us
-        peak = max(
-            (value for values in pairs.values() for value in values.values()),
-            default=1,
-        ) or 1
-        plot = self.rect().adjusted(8, 5, -8, -7)
-        slot = plot.width() / max(1, len(pairs))
-        variant_color = COLORS["acid"] if report.verdict == "improved" else COLORS["orange"]
-        for ordinal, pair_index in enumerate(sorted(pairs)):
-            values = pairs[pair_index]
-            center = plot.left() + slot * (ordinal + 0.5)
-            for offset, condition, color in (
-                (-4.5, "baseline", COLORS["violet"]),
-                (1.0, "variant", variant_color),
-            ):
-                height = plot.height() * values.get(condition, 0) / float(peak)
-                rect = QtCore.QRectF(center + offset, plot.bottom() - height, 4.0, height)
-                glow = QtGui.QColor(color)
-                glow.setAlpha(62)
-                painter.fillRect(rect.adjusted(-2, -1, 2, 1), glow)
-                painter.fillRect(rect, color)
-        scan_x = plot.left() + plot.width() * self._phase
-        painter.setPen(QtGui.QPen(QtGui.QColor(72, 215, 255, 90), 1.0))
-        painter.drawLine(QtCore.QLineF(scan_x, plot.top(), scan_x, plot.bottom()))
-
-
-class CounterfactualStrip(QtWidgets.QFrame):
-    dismissRequested = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("CounterfactualStrip")
-        self.setFixedHeight(68)
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(18, 7, 12, 7)
-        layout.setSpacing(14)
-        self.mark = QtWidgets.QLabel("◇  反事实实验")
-        self.mark.setObjectName("CounterfactualMark")
-        layout.addWidget(self.mark)
-        identity = QtWidgets.QVBoxLayout()
-        identity.setSpacing(1)
-        self.target = QtWidgets.QLabel("尚未实验")
-        self.target.setObjectName("CounterfactualTarget")
-        self.design = QtWidgets.QLabel("成对 AB / BA 设计")
-        self.design.setObjectName("CounterfactualDesign")
-        identity.addWidget(self.target)
-        identity.addWidget(self.design)
-        layout.addLayout(identity)
-        self.spark = CounterfactualSpark()
-        layout.addWidget(self.spark, 1)
-        result = QtWidgets.QVBoxLayout()
-        result.setSpacing(1)
-        self.result_metric = QtWidgets.QLabel("—")
-        self.result_metric.setObjectName("CounterfactualMetric")
-        self.interval = QtWidgets.QLabel("")
-        self.interval.setObjectName("CounterfactualInterval")
-        result.addWidget(self.result_metric)
-        result.addWidget(self.interval)
-        layout.addLayout(result)
-        close = QtWidgets.QPushButton("×")
-        close.setObjectName("LensClose")
-        close.setToolTip("关闭反事实证据")
-        close.clicked.connect(self.dismissRequested)
-        layout.addWidget(close)
-
-    def set_report(self, report: CounterfactualReport):
-        self.spark.set_report(report)
-        self.target.setText(report.target_name)
-        self.design.setText(
-            "%s 组配对 · %s 次预热 · 状态已恢复"
-            % (report.pair_count, report.warmup_count)
-        )
-        signed = "%+.1f%%" % report.benefit_percent
-        verdict = {"improved": "改善", "regressed": "变慢", "neutral": "无显著变化", "inconclusive": "证据不足"}.get(report.verdict, report.verdict)
-        self.result_metric.setText("%s  ·  %s" % (verdict, signed))
-        self.result_metric.setProperty("verdict", report.verdict)
-        self.result_metric.style().unpolish(self.result_metric)
-        self.result_metric.style().polish(self.result_metric)
-        self.interval.setText(
-            "95%% 区间  %+.1f%% … %+.1f%%  ·  墙钟时间"
-            % (report.benefit_ci_low_percent, report.benefit_ci_high_percent)
-        )
-        self.setVisible(True)
-
-    def set_motion_enabled(self, enabled: bool):
-        self.spark.set_motion_enabled(enabled)
-
-    def clear(self):
-        self.spark.set_report(None)
-        self.target.setText("尚未实验")
-        self.design.setText("成对 AB / BA 设计")
-        self.result_metric.setText("—")
-        self.interval.clear()
 
 
 class HostHealthBeacon(QtWidgets.QWidget):
@@ -2307,6 +2174,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             )
         self._present_counterfactual_run(run, record)
 
+
     def _present_counterfactual_run(self, run: CounterfactualRun, record=None):
         if not self._snapshot:
             return
@@ -2316,76 +2184,22 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 run,
                 record,
             )
+            names = {node.id: node.name for node in self._snapshot.nodes}
+            state = present_counterfactual_report(
+                run.report,
+                node_names=names,
+                archive_path=str(record.path) if record else "",
+                archive_checksum=record.checksum if record else "",
+            )
         except Exception as exc:
             self.status.setText("  反事实证据已拒绝  ·  %s" % exc)
             return
         self._apply_investigation_transition(transition)
-        report = run.report
-        self.counterfactual_strip.set_report(report)
-        self.clinic_view.set_heading("反事实性能采样")
-        node_map = self._snapshot.node_map
-        effects = []
-        for rank, effect in enumerate(report.node_effects[:8], 1):
-            node = node_map.get(effect.node_id)
-            effects.append(
-                "%02d  %s  ·  实测包含耗时 Δ %+.3f ms"
-                % (
-                    rank,
-                    node.name if node else effect.node_id,
-                    effect.observed_delta_us / 1000.0,
-                )
-            )
-        archive_receipt = (
-            "%s\nSHA-256 %s"
-            % (
-                self._counterfactual_record.path.name,
-                self._counterfactual_record.checksum,
-            )
-            if self._counterfactual_record else
-            "归档不可用；结果仍保留在当前调查会话中。"
-        )
-        self.clinic_view.set_body(
-            "反事实实验 / NODESTATE\n"
-            "%s  ·  %s %s → %s\n\n"
-            "墙钟时间结果\n"
-            "基线均值 %.3f ms · p95 %.3f ms\n"
-            "变体均值 %.3f ms · p95 %.3f ms\n"
-            "平均收益 %+.3f ms (%+.1f%%)\n"
-            "成对 bootstrap 95%% 区间 %+.3f … %+.3f ms\n"
-            "结论 %s · 实测噪声 %.1f%%\n\n"
-            "试验设计\n"
-            "%s 组成对试验 · AB / BA 交替 · 每种状态预热 %s 次\n"
-            "结果为完整操作的墙钟时间；区间跨越零时视为证据不足。\n\n"
-            "性能采样解释\n%s\n\n"
-            "节点包含耗时可能重叠，不能直接相加为优化收益。\n\n"
-            "恢复回执\n原始 nodeState 已恢复 · Maya Undo 顶部已保留\n\n"
-            "证据归档\n%s"
-            % (
-                report.target_name,
-                report.attribute,
-                report.baseline_value,
-                report.variant_value,
-                report.baseline_mean_us / 1000.0,
-                report.baseline_p95_us / 1000.0,
-                report.variant_mean_us / 1000.0,
-                report.variant_p95_us / 1000.0,
-                report.benefit_mean_us / 1000.0,
-                report.benefit_percent,
-                report.benefit_ci_low_us / 1000.0,
-                report.benefit_ci_high_us / 1000.0,
-                {"improved": "改善", "regressed": "变慢", "neutral": "无显著变化", "inconclusive": "证据不足"}.get(report.verdict, report.verdict),
-                report.noise_ratio * 100.0,
-                report.pair_count,
-                report.warmup_count,
-                "\n".join(effects) if effects else "没有可唯一映射的节点事件。",
-                archive_receipt,
-            )
-        )
-        self.clinic_view.set_action("实验状态已恢复", enabled=False)
-        self.status.setText(
-            "  反事实实验：%s  ·  %+.1f%%  ·  状态与 Undo 已恢复"
-            % ({"improved": "改善", "regressed": "变慢", "neutral": "无显著变化", "inconclusive": "证据不足"}.get(report.verdict, report.verdict), report.benefit_percent)
-        )
+        self.counterfactual_strip.set_state(state)
+        self.clinic_view.set_heading(state.heading)
+        self.clinic_view.set_body(state.body)
+        self.clinic_view.set_action(state.action_text, enabled=False)
+        self.status.setText("  %s" % state.status_text)
 
     def _dismiss_counterfactual(self):
         self.counterfactual_strip.setVisible(False)

@@ -121,6 +121,9 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 - Failure Prism 已迁入 `ui/bisect.py`，中文结果映射位于宿主无关 `presentation/bisect.py`；
 - 回归裂隙已迁入 `ui/regression.py`，性能与 Finding 的中文解释由
   `presentation/regression.py` 一次生成；项目门禁已位于独立视图模块；
+- Counterfactual Spectrum 已迁入 `ui/counterfactual.py`；宿主无关
+  `presentation/counterfactual.py` 在状态切换前验证完整连续的 AB/BA 配对，并统一生成条带、
+  证据正文和状态栏文案；
 - QTimer 只驱动绘制 phase、去抖和分片捕获；
 - 耗时纯数据分析使用 QThread Worker；
 - Maya 场景 API 与 QWidget 更新留在对应的安全线程边界；
@@ -129,7 +132,7 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 ## 后续拆分顺序
 
 1. 将剩余批处理/故障编排逐步迁入显式 Application 用例；
-2. 继续拆分 Counterfactual/Delta 等遗留表面；Lens、Project Gate、Bisect、Regression 已完成独立边界；
+2. 继续拆分 Delta 等遗留表面；Lens、Project Gate、Bisect、Regression、Counterfactual 已完成独立边界；
 3. 将当前主窗口内的完整 QSS 提取为可版本化主题表面，并保留真实截图差异验收；
 4. 逐步移除 `_presentation_field` 兼容属性，让视图通过显式 render/state transition 工作；
 5. 为每个工作区保留普通 Python 状态测试、离屏中文视觉测试与真实 Maya 生命周期测试。
@@ -139,7 +142,7 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 当前验证证据
 
-- 普通 Python：286 项通过，19 项仅宿主环境测试按预期跳过；
+- 普通 Python：291 项通过，19 项仅宿主环境测试按预期跳过；
 - Presentation State：新场景代际失效、选择互斥、Lens、Profiler、Runtime、Delta 与字段拼写保护；
 - UI Foundation：稳定命名色板、Qt6 分组枚举和拼写拒绝；
 - Scene Atlas：节点/边物化、240 节点预算、异常节点优先、选择不回声和动效定时器边界；
@@ -152,16 +155,19 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
   动态钻石轨迹、中文控制和 reduced-motion 计时器边界；
 - Regression Rift：稳定、门禁失败、无性能配对和残缺配对证据均有纯 Presenter 契约；条带、Atlas
   高亮、证据正文与状态栏消费同一个不可变状态；
+- Counterfactual Spectrum：完整配对、证据不足、中文归档与恢复回执均有纯 Presenter 契约；
+  独立 View 保留双柱光谱、扫描线与 reduced-motion 计时器边界；
 - 真实 Maya 2025 仪器宽屏：PID 44988，584 个 Profiler 事件，22.440 秒自行退出；
 - 真实 Maya 2025 仪器窄屏：800 × 900，PID 15124，865 个 Profiler 事件，22.984 秒自行退出；
 - 干净 Release 安装：PID 25748 只从临时 Module 导入，18.623 秒自行退出并完成最终卸载；
 - 生命周期：首次启动、重复启动、开发热重载、唯一可见工作区、选择回调和菜单卸载通过；
 - 清理：9 个活动计时器归零，残留可见工作区为 0。
 
-`ui/workspace.py` 当前 3039 行；独立 `ui/profiler.py` 为 254 行，`ui/runtime.py` 为 155 行，
+`ui/workspace.py` 当前 2853 行；独立 `ui/profiler.py` 为 254 行，`ui/runtime.py` 为 155 行，
 `ui/clinic.py` 为 715 行，宿主无关
 `presentation/evidence.py` 为 140 行，`ui/bisect.py` 为 222 行，`presentation/bisect.py` 为 119 行，
-`ui/regression.py` 为 149 行，`presentation/regression.py` 为 144 行。
+`ui/regression.py` 为 149 行，`presentation/regression.py` 为 144 行，`ui/counterfactual.py` 为
+135 行，`presentation/counterfactual.py` 为 153 行。
 主窗口已不再直接拥有 `issue_heading`、`evidence`、`plan_button`、Issue 卡片列表、Clinic、Profiler、
-Runtime、Failure Prism 或 Regression Rift View 定义；其他业务工作区仍待迁移。该证据
+Runtime、Failure Prism、Regression Rift 或 Counterfactual Spectrum View 定义；其他业务工作区仍待迁移。该证据
 不能被解释成整个主窗口已经完成拆分。
