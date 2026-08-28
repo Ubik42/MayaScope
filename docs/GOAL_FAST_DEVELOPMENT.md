@@ -449,3 +449,17 @@ Scene Clinic 的 Reference/Animation/Publish 首批规则与批量计划纵向�
 
 整个 `/goal` 继续保持 active；下一阶段优先渐进拆分 `ui/workspace.py` 的 Presentation State、
 后台任务编排和业务工作区，不一次性重写已经通过真实 Maya 验证的 QPainter/QGraphicsView 组件。
+
+## 第三十二里程碑进度（完成：Presentation State 第一阶段）
+
+1. 新增宿主无关、不可变 `WorkspacePresentationState`，普通 Python 不导入 Maya 或 PySide。
+2. 新场景代会原子清除旧 Lens、Profiler、Runtime、Delta 与反事实证据，不再依赖一串松散赋值维持一致性。
+3. Finding / Incident 选择互斥、节点焦点、Lens、Clinic、Profiler、Runtime 和 Delta 均有显式语义转换。
+4. 主窗口保留临时兼容属性，但所有原字段已映射到唯一 `_presentation`，后续可分区迁移而不大爆炸重写。
+5. Clinic、Crash Bisect 和项目队列 Worker 已移到 `ui/workers.py`，不再与视觉类混在同一巨型模块。
+6. `ui/workspace.py` 从 5542 行降到 5414 行；文档明确这只是第一阶段，不把分文件冒充职责已经完全分离。
+7. 新增 4 项状态转换测试，普通 Python 总计 187 项通过（19 项宿主限定跳过）。
+8. 真实 Maya 2025 PID 53308 在 19.116 秒内通过首次启动、重复启动、热重载和关闭；10 个计时器归零。
+
+整个 `/goal` 继续保持 active；下一阶段提取 UI Foundation（字体、色彩、Qt 枚举、确认对话框），
+再优先拆出 Scene Atlas 视图与控制器，同时保持真实中文视觉和生命周期证据不变。

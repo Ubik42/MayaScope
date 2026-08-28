@@ -17,17 +17,15 @@ from typing import Dict, Iterable, Optional, Sequence, Tuple
 from ..actions import MayaChangeExecutor, plan_for_issue, plan_for_issues
 from ..analysis.delta import SceneDelta, compare_snapshots
 from ..analysis.clinic import (
-    ClinicCancelled,
     ClinicReport,
     DEFAULT_PROFILES,
     DEFAULT_REGISTRY,
     RuleProfile,
     RuleSpec,
 )
-from ..analysis.incidents import Incident, cluster_issues
+from ..analysis.incidents import Incident
 from ..analysis.identity import build_host_identity_index
 from ..analysis.graph import (
-    QueryCancelled,
     alias_graph_indexes,
     get_graph_index,
     invalidate_graph_indexes,
@@ -60,15 +58,16 @@ from ..collectors import (
 )
 from ..model import ProfilerCapture, SceneNode, SceneSnapshot
 from ..host_health import HostHealth, collect_host_health
+from ..presentation import WorkspacePresentationState
 from ..qt_compat import QtCore, QtGui, QtWidgets
 from ..runtime_log import log_event
 from ..runner import (
-    BisectSession,
     build_post_open_bisect_plan,
     build_pre_open_ascii_bisect_plan,
     load_bisect_journal,
 )
 from ..storage import ExperimentStore, SnapshotStore
+from .workers import BisectWorker, ClinicWorker, ProjectQueueWorker
 
 
 WINDOW_OBJECT_NAME = "MayaScopeSpectralWorkspace"
@@ -2604,134 +2603,45 @@ class BisectPrism(QtWidgets.QFrame):
         self.canvas.set_motion_enabled(enabled)
 
 
-class _BisectWorker(QtCore.QObject):
-    probeCompleted = QtCore.Signal(object, object)
-    finished = QtCore.Signal(object)
-    failed = QtCore.Signal(str)
-
-    def __init__(self, plan, cancel_event, root=None, journal_path=None):
-        super().__init__()
-        self.plan = plan
-        self.cancel_event = cancel_event
-        self.root = root
-        self.journal_path = journal_path
-
-    @QtCore.Slot()
-    def run(self):
-        try:
-            session = (
-                BisectSession.resume(self.journal_path)
-                if self.journal_path
-                else BisectSession(self.plan, root=self.root)
-            )
-            result = session.run(
-                cancelled=self.cancel_event.is_set,
-                progress=self.probeCompleted.emit,
-            )
-        except Exception as exc:
-            self.failed.emit(str(exc))
-            return
-        self.finished.emit(result)
-
-
-class _ClinicWorker(QtCore.QObject):
-    progress = QtCore.Signal(int, int, str)
-    finished = QtCore.Signal(object, object, object)
-    cancelled = QtCore.Signal()
-    failed = QtCore.Signal(str)
-
-    def __init__(self, registry, snapshot, enabled_rule_ids, include_expensive, cancel_event):
-        super().__init__()
-        self.registry = registry
-        self.snapshot = snapshot
-        self.enabled_rule_ids = tuple(enabled_rule_ids)
-        self.include_expensive = bool(include_expensive)
-        self.cancel_event = cancel_event
-
-    @QtCore.Slot()
-    def run(self):
-        try:
-            if self.cancel_event.is_set():
-                raise ClinicCancelled("场景诊所在图索引前被取消")
-            # Prewarm the shared immutable CSR index off the UI thread, so the
-            # first Lens interaction never pays the large-scene build cost.
-            get_graph_index(
-                self.snapshot,
-                cancelled=self.cancel_event.is_set,
-            )
-            atlas_index = get_graph_index(
-                self.snapshot,
-                ("dg", "dag"),
-                cancelled=self.cancel_event.is_set,
-            )
-            atlas_index.ranked_node_ids(cancelled=self.cancel_event.is_set)
-            host_identity_index = build_host_identity_index(
-                self.snapshot, cancelled=self.cancel_event.is_set
-            )
-            report = self.registry.evaluate(
-                self.snapshot,
-                enabled_rule_ids=self.enabled_rule_ids,
-                include_expensive=self.include_expensive,
-                cancelled=self.cancel_event.is_set,
-                progress=self.progress.emit,
-            )
-            if self.cancel_event.is_set():
-                raise ClinicCancelled("场景诊所在当前规则完成后被取消")
-            incidents = cluster_issues(self.snapshot, report.issues)
-        except (ClinicCancelled, QueryCancelled):
-            self.cancelled.emit()
-            return
-        except Exception as exc:
-            self.failed.emit(str(exc))
-            return
-        self.finished.emit(report, incidents, host_identity_index)
-
-
-class _ProjectQueueWorker(QtCore.QObject):
-    progress = QtCore.Signal(object)
-    finished = QtCore.Signal(object)
-    failed = QtCore.Signal(str)
-
-    def __init__(
-        self, plan_path, journal_path, report_dir, project_report, cancel_event
-    ):
-        super().__init__()
-        self.plan_path = Path(plan_path)
-        self.journal_path = Path(journal_path)
-        self.report_dir = Path(report_dir)
-        self.project_report = Path(project_report)
-        self.cancel_event = cancel_event
-
-    @QtCore.Slot()
-    def run(self):
-        try:
-            from ..project_queue import run_project_plan
-
-            journal = run_project_plan(
-                self.plan_path,
-                self.journal_path,
-                self.report_dir,
-                self.project_report,
-                should_cancel=self.cancel_event.is_set,
-                progress=self.progress.emit,
-            )
-        except Exception as exc:
-            self.failed.emit("%s: %s" % (type(exc).__name__, exc))
-            return
-        self.finished.emit(journal)
+def _presentation_field(name):
+    """Temporary compatibility alias during the incremental state migration."""
+    return property(
+        lambda self: getattr(self._presentation, name),
+        lambda self, value: setattr(
+            self, "_presentation", self._presentation.update(**{name: value})
+        ),
+    )
 
 
 class MayaScopeWorkspace(QtWidgets.QMainWindow):
     hostSelectionChanged = QtCore.Signal(object)
 
+    _snapshot = _presentation_field("snapshot")
+    _issues = _presentation_field("issues")
+    _clinic_report = _presentation_field("clinic_report")
+    _incidents = _presentation_field("incidents")
+    _selected_issue = _presentation_field("selected_issue")
+    _selected_incident = _presentation_field("selected_incident")
+    _focus_node_id = _presentation_field("focus_node_id")
+    _lens_report = _presentation_field("lens_report")
+    _measured_report = _presentation_field("measured_report")
+    _selected_candidate = _presentation_field("selected_candidate")
+    _profiler_capture = _presentation_field("profiler_capture")
+    _counterfactual_run = _presentation_field("counterfactual_run")
+    _counterfactual_record = _presentation_field("counterfactual_record")
+    _pulse_range = _presentation_field("pulse_range")
+    _delta = _presentation_field("delta")
+    _delta_before = _presentation_field("delta_before")
+    _runtime_snapshot = _presentation_field("runtime_snapshot")
+    _runtime_report = _presentation_field("runtime_report")
+
     def __init__(self, parent=None, clinic_environment: Optional[ClinicEnvironment] = None):
         super().__init__(parent)
+        self._presentation = WorkspacePresentationState()
         _ensure_ui_fonts()
         self.setObjectName(WINDOW_OBJECT_NAME)
         self.setWindowTitle("MayaScope · 光谱因果场景图谱")
         self.resize(1480, 900)
-        self._snapshot: Optional[SceneSnapshot] = None
-        self._issues: Tuple[Issue, ...] = ()
         self._clinic_config_error = ""
         if clinic_environment is not None:
             self._clinic_environment = clinic_environment
@@ -2743,20 +2653,6 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 self._clinic_config_error = str(exc)
         self._clinic_registry = self._clinic_environment.registry
         self._clinic_profiles = self._clinic_environment.profiles
-        self._clinic_report: Optional[ClinicReport] = None
-        self._incidents: Tuple[Incident, ...] = ()
-        self._selected_issue: Optional[Issue] = None
-        self._selected_incident: Optional[Incident] = None
-        self._focus_node_id: Optional[str] = None
-        self._lens_report: Optional[RootCauseReport] = None
-        self._measured_report: Optional[MeasuredRootCauseReport] = None
-        self._selected_candidate: Optional[RootCauseCandidate] = None
-        self._profiler_capture: Optional[ProfilerCapture] = None
-        self._counterfactual_run: Optional[CounterfactualRun] = None
-        self._counterfactual_record = None
-        self._pulse_range = (0, 0)
-        self._delta: Optional[SceneDelta] = None
-        self._delta_before: Optional[SceneSnapshot] = None
         self._regression_payload = None
         self._project_audit_payload = None
         self._project_queue_payload = None
@@ -2768,8 +2664,6 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._project_queue_worker = None
         self._project_queue_cancel_event = None
         self._close_after_project_queue = False
-        self._runtime_snapshot = None
-        self._runtime_report = None
         self._runtime_session = None
         self._selection_bridge = None
         self._host_identity_index = {}
@@ -3487,8 +3381,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             return
         runtime = session.result
         report = analyze_runtime(runtime, self._snapshot)
-        self._runtime_snapshot = runtime
-        self._runtime_report = report
+        self._presentation = self._presentation.present_runtime(runtime, report)
         self._restore_runtime_controls()
         self.runtime_constellation.set_report(runtime, report)
         self._focus_runtime()
@@ -3500,8 +3393,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             not self._snapshot
             or self._runtime_snapshot.source_snapshot_id != self._snapshot.snapshot_id
         ):
-            self._runtime_snapshot = None
-            self._runtime_report = None
+            self._presentation = self._presentation.update(
+                runtime_snapshot=None, runtime_report=None
+            )
             self.runtime_constellation.setVisible(False)
             self.status.setText(
                 "  运行时证据已过期  ·  请为当前快照重新采集"
@@ -3536,14 +3430,14 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _dismiss_runtime(self):
         self.runtime_constellation.setVisible(False)
         self.runtime_constellation.clear()
-        self._runtime_snapshot = None
-        self._runtime_report = None
+        self._presentation = self._presentation.update(
+            runtime_snapshot=None, runtime_report=None
+        )
         if not self._lens_report and not self._delta and not self._regression_payload:
             self.atlas.clear_lens()
 
     def _set_delta(self, delta: SceneDelta, before: SceneSnapshot):
-        self._delta = delta
-        self._delta_before = before
+        self._presentation = self._presentation.present_delta(delta, before)
         self.delta_strip.set_delta(delta)
 
     def _auto_capture(self):
@@ -3679,28 +3573,19 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     ):
         issues = clinic_report.issues
         self._close_lens()
-        self._runtime_snapshot = None
-        self._runtime_report = None
+        self._presentation = self._presentation.present_scene(
+            snapshot, issues, clinic_report, incidents
+        )
         self.runtime_constellation.clear()
         self.runtime_constellation.setVisible(False)
         self._regression_payload = None
         self.regression_rift.clear()
         self.regression_rift.setVisible(False)
-        self._delta = None
-        self._delta_before = None
         self.delta_strip.setVisible(False)
-        self._counterfactual_run = None
-        self._counterfactual_record = None
         self.counterfactual_strip.clear()
         self.counterfactual_strip.setVisible(False)
-        self._profiler_capture = None
-        self._measured_report = None
-        self._pulse_range = (0, 0)
-        self._snapshot, self._issues = snapshot, issues
         self._host_identity_index = host_identity_index
         self.runtime_button.setEnabled(True)
-        self._clinic_report = clinic_report
-        self._incidents = incidents
         self.clinic_array.set_scene_settings(
             snapshot.scene_settings,
             snapshot.external_dependencies,
@@ -3791,8 +3676,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 card = IssueCard(issue, specs.get(issue.rule_id))
                 card.activated.connect(self._select_issue)
                 self.issue_list.insertWidget(self.issue_list.count() - 1, card)
-        self._selected_issue = None
-        self._selected_incident = None
+        self._presentation = self._presentation.update(
+            selected_issue=None, selected_incident=None
+        )
         self.plan_button.setEnabled(False)
         if self._clinic_report and not self._clinic_report.runs:
             self.evidence.setText("请至少启用一条诊所规则，然后扫描已冻结的场景快照。")
@@ -3818,7 +3704,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self._clinic_cancel_event = threading.Event()
         self._clinic_job = (kind, snapshot, previous_snapshot, callback, bool(required))
         thread = QtCore.QThread(self)
-        worker = _ClinicWorker(
+        worker = ClinicWorker(
             self._clinic_registry,
             snapshot,
             self.clinic_array.enabled_rule_ids(),
@@ -3874,9 +3760,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 if callback is not None:
                     callback()
             else:
-                self._clinic_report = report
-                self._issues = report.issues
-                self._incidents = incidents
+                self._presentation = self._presentation.present_clinic(
+                    report, incidents
+                )
                 self._host_identity_index = host_identity_index
                 self.clinic_array.set_report(report, len(incidents))
                 self.atlas.set_snapshot(
@@ -3962,8 +3848,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
 
     def _select_issue(self, issue: Issue):
         self._close_lens()
-        self._selected_issue = issue
-        self._selected_incident = None
+        self._presentation = self._presentation.select_issue(issue)
         self.atlas.highlight(issue.affected_node_ids)
         evidence = "\n".join("%s  ·  %s" % (item.label, item.value) for item in issue.evidence)
         self.evidence.setText("%s\n\n%s\n\n%s" % (issue.description, evidence, issue.id))
@@ -4013,8 +3898,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         if not self._snapshot:
             return
         self._close_lens()
-        self._selected_issue = None
-        self._selected_incident = incident
+        self._presentation = self._presentation.select_incident(incident)
         self.atlas.highlight(incident.affected_node_ids)
         issue_map = {issue.id: issue for issue in self._issues}
         findings = "\n".join(
@@ -4159,9 +4043,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _activate_focus(self, node_id: str):
         if not self._snapshot or node_id not in self._snapshot.node_map:
             return
-        self._selected_issue = None
-        self._selected_incident = None
-        self._focus_node_id = node_id
+        self._presentation = self._presentation.focus(node_id)
         node = self._snapshot.node_map[node_id]
         self.pulse.counterfactual_button.setEnabled(not node.referenced)
         self.lens_focus.setText(node.name)
@@ -4204,9 +4086,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         except Exception as exc:
             self.status.setText("  根因透镜失败  ·  %s" % exc)
             return
-        self._lens_report = report
-        self._measured_report = measured
-        self._selected_candidate = None
+        self._presentation = self._presentation.present_lens(report, measured)
         self.lens_ribbon.set_report(report, self._snapshot, measured)
         self.issue_heading.setText("根因透镜")
         self.plan_button.setEnabled(False)
@@ -4445,7 +4325,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             "  故障二分执行中  ·  后台 Maya 2025 探针 01  ·  源校验和已锁定"
         )
         thread = QtCore.QThread(self)
-        worker = _BisectWorker(
+        worker = BisectWorker(
             plan,
             self._bisect_cancel_event,
             root=root,
@@ -4655,15 +4535,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.atlas.scene().clear()
         self.atlas._node_items.clear()
         self.atlas._edge_items = []
-        self._snapshot = None
+        self._presentation = WorkspacePresentationState()
         self._host_identity_index = {}
-        self._delta = None
-        self._delta_before = None
-        self._runtime_snapshot = None
-        self._runtime_report = None
-        self._profiler_capture = None
-        self._counterfactual_run = None
-        self._counterfactual_record = None
         self._regression_payload = None
         self._project_audit_payload = None
         self._project_queue_payload = None
@@ -4685,8 +4558,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
                 cmds.refresh(force=True)
 
             result = profile_callable(operation, snapshot=self._snapshot)
-            self._profiler_capture = result.capture
-            self._pulse_range = (0, result.capture.duration_us)
+            self._presentation = self._presentation.present_profiler(result.capture)
             self.pulse.set_capture(result.capture)
             self._pulse_range_selected(self._pulse_range)
         except Exception as exc:
@@ -4784,7 +4656,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _present_counterfactual_run(self, run: CounterfactualRun):
         if not self._snapshot:
             return
-        self._counterfactual_run = run
+        self._presentation = self._presentation.present_counterfactual(
+            run, self._counterfactual_record
+        )
         report = run.report
         self.counterfactual_strip.set_report(report)
         self.atlas.show_counterfactual(report)
@@ -4857,8 +4731,9 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
     def _dismiss_counterfactual(self):
         self.counterfactual_strip.setVisible(False)
         self.counterfactual_strip.clear()
-        self._counterfactual_run = None
-        self._counterfactual_record = None
+        self._presentation = self._presentation.update(
+            counterfactual_run=None, counterfactual_record=None
+        )
         if self._lens_report:
             self.atlas.show_lens(self._lens_report, self._selected_candidate)
         elif self._profiler_capture:
@@ -5256,7 +5131,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             return
         cancel_event = threading.Event()
         thread = QtCore.QThread(self)
-        worker = _ProjectQueueWorker(
+        worker = ProjectQueueWorker(
             self._project_queue_plan_path,
             self._project_queue_journal_path,
             self._project_queue_report_dir,
@@ -5456,10 +5331,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             self.atlas.clear_lens()
 
     def _close_lens(self, *_args):
-        self._focus_node_id = None
-        self._lens_report = None
-        self._measured_report = None
-        self._selected_candidate = None
+        self._presentation = self._presentation.clear_lens()
         self.lens_bar.setVisible(False)
         self.lens_ribbon.setVisible(False)
         self.pulse.counterfactual_button.setEnabled(False)

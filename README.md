@@ -59,7 +59,8 @@ Scene Clinic 体检：把零散报错整理成可解释的问题和事故
 Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 生产化仍在持续推进，当前可下载包、
 校验清单与版本说明见 [GitHub Releases](https://github.com/Ubik42/MayaScope/releases)。完整路线见
 [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md)，产品研究见
-[`docs/RESEARCH_TD_PRODUCT.md`](docs/RESEARCH_TD_PRODUCT.md)。
+[`docs/RESEARCH_TD_PRODUCT.md`](docs/RESEARCH_TD_PRODUCT.md)，当前分层与渐进拆分合同见
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## 启动新版调查工作区
 

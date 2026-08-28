@@ -40,6 +40,10 @@ Release ZIP 干净安装回放现已落地：最终包被解压到隔离目录�
 首次加载；子进程不注入开发 `PYTHONPATH` / `MAYA_MODULE_PATH`，并核对实际包来源。回放随后完成
 可恢复卸载、备份恢复、最终卸载和临时环境清理。下一项架构优先级是渐进拆分 5500 行
 `ui/workspace.py`，先提取 Presentation State 与独立工作区模块，不重写已验证的自绘组件。
+Presentation 拆分第一阶段现已完成：新增宿主无关、不可变 `WorkspacePresentationState`，把场景、
+诊所、异常/事件选择、根因焦点、Profiler、Runtime、Delta 与反事实证据组织成显式语义转换；三个
+QObject Worker 已迁出主窗口模块。兼容属性让现有视觉行为保持不变，`ui/workspace.py` 仍有 5414 行，
+下一阶段继续提取 UI Foundation 和独立业务工作区，不能把本阶段描述成重构完毕。
 
 当前宿主策略：展示版只以 Maya 2025 + PySide6 为开发和验收基线。先把一个版本的
 视觉完成度、动态交互和可靠性做深，不并行维护 Maya 2024/PySide2；核心数据与算法
