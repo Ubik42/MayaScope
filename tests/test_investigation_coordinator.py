@@ -5,8 +5,13 @@ from pathlib import Path
 import unittest
 
 from MayaScope.analysis.clinic import ClinicReport, RuleRun
+from MayaScope.analysis.counterfactual import (
+    ExperimentObservation,
+    build_counterfactual_report,
+)
 from MayaScope.analysis.incidents import Incident
 from MayaScope.analysis.rules import Evidence, Issue, Severity
+from MayaScope.analysis.runtime import RuntimeReport
 from MayaScope.application import (
     AtlasClearIntent,
     AtlasCounterfactualIntent,
@@ -24,6 +29,7 @@ from MayaScope.model import (
     ProfilerCapture,
     ProfilerCategory,
     ProfilerEvent,
+    RuntimeSnapshot,
     SceneEdge,
     SceneNode,
     SceneSnapshot,
@@ -79,6 +85,66 @@ class InvestigationCoordinatorTests(unittest.TestCase):
             self.snapshot,
             self.report,
             (self.incident,),
+        )
+
+    def _capture(self, *, source_snapshot_id=None, node_id="b", duration_us=100):
+        return ProfilerCapture(
+            events=(
+                ProfilerEvent(
+                    0,
+                    0,
+                    duration_us,
+                    duration_us,
+                    0,
+                    0,
+                    0,
+                    "DG",
+                    0,
+                    "中间_B",
+                    node_id=node_id,
+                ),
+            ),
+            categories=(ProfilerCategory(0, "DG"),),
+            source_snapshot_id=(
+                self.snapshot.snapshot_id
+                if source_snapshot_id is None
+                else source_snapshot_id
+            ),
+        )
+
+    def _counterfactual_run(self, *, state_restored=True, source_snapshot_id=None):
+        source_id = (
+            self.snapshot.snapshot_id
+            if source_snapshot_id is None
+            else source_snapshot_id
+        )
+        observations = (
+            ExperimentObservation(0, "baseline", 0, 120, 100, 1),
+            ExperimentObservation(0, "variant", 1, 90, 80, 1),
+            ExperimentObservation(1, "variant", 0, 92, 82, 1),
+            ExperimentObservation(1, "baseline", 1, 124, 104, 1),
+        )
+        report = build_counterfactual_report(
+            observations,
+            target_node_id="b",
+            target_name="中间_B",
+            attribute="nodeState",
+            baseline_value=0,
+            variant_value=1,
+            source_snapshot_id=source_id,
+            bootstrap_iterations=100,
+            metadata={
+                "state_restored": state_restored,
+                "undo_head_preserved": True,
+            },
+        )
+        captures = tuple(
+            self._capture(source_snapshot_id=source_id) for _index in range(2)
+        )
+        return SimpleNamespace(
+            report=report,
+            baseline_captures=captures,
+            variant_captures=captures,
         )
 
     def test_accept_scene_validates_generation_and_emits_scene_intent(self):
@@ -192,6 +258,104 @@ class InvestigationCoordinatorTests(unittest.TestCase):
         self.assertIsInstance(restored.atlas_intents[0], AtlasCounterfactualIntent)
         self.assertIs(restored.atlas_intents[0].report, report)
 
+    def test_profiler_is_accepted_as_one_validated_generation(self):
+        state = self._accepted().state
+        capture = self._capture()
+        transition = self.coordinator.accept_profiler(state, capture)
+        self.assertIs(transition.state.profiler_capture, capture)
+        self.assertEqual(transition.state.pulse_range, (0, 100))
+        self.assertIsInstance(transition.atlas_intents[0], AtlasPulseIntent)
+        self.assertEqual(transition.atlas_intents[0].stats[0].node_id, "b")
+        with self.assertRaisesRegex(InvestigationStateError, "不属于当前快照"):
+            self.coordinator.accept_profiler(state, self._capture(source_snapshot_id="old"))
+        with self.assertRaisesRegex(InvestigationStateError, "快照之外"):
+            self.coordinator.accept_profiler(state, self._capture(node_id="missing"))
+
+    def test_pulse_range_is_normalized_and_bounds_checked(self):
+        profiled = self.coordinator.accept_profiler(
+            self._accepted().state,
+            self._capture(),
+        ).state
+        transition = self.coordinator.set_pulse_range(profiled, 80, 20)
+        self.assertEqual(transition.state.pulse_range, (20, 80))
+        self.assertIsInstance(transition.atlas_intents[0], AtlasPulseIntent)
+        with self.assertRaisesRegex(InvestigationStateError, "越界"):
+            self.coordinator.set_pulse_range(profiled, -1, 101)
+
+    def test_runtime_inventory_and_report_share_one_identity_boundary(self):
+        state = self._accepted().state
+        runtime = RuntimeSnapshot(
+            source_snapshot_id=self.snapshot.snapshot_id,
+            script_jobs=(),
+            expressions=(),
+            plugins=(),
+            node_callbacks=(),
+            script_jobs_available=True,
+            batch_mode=False,
+            maya_version="2025",
+            runtime_id="runtime-current",
+        )
+        report = RuntimeReport("runtime-current", (self.issue,), ("只读清点",))
+        transition = self.coordinator.accept_runtime(state, runtime, report)
+        self.assertIs(transition.state.runtime_snapshot, runtime)
+        self.assertIsInstance(transition.atlas_intents[0], AtlasHighlightIntent)
+        self.assertEqual(transition.atlas_intents[0].node_ids, ("b",))
+        with self.assertRaisesRegex(InvestigationStateError, "身份不一致"):
+            self.coordinator.accept_runtime(
+                state,
+                runtime,
+                RuntimeReport("runtime-old", (), ()),
+            )
+        stale = RuntimeSnapshot(
+            source_snapshot_id="scene-old",
+            script_jobs=(),
+            expressions=(),
+            plugins=(),
+            node_callbacks=(),
+            script_jobs_available=False,
+            batch_mode=True,
+            maya_version="2025",
+        )
+        with self.assertRaisesRegex(InvestigationStateError, "不属于当前快照"):
+            self.coordinator.accept_runtime(
+                state,
+                stale,
+                RuntimeReport(stale.runtime_id, (), ()),
+            )
+
+    def test_counterfactual_requires_restoration_and_exact_scene_generation(self):
+        state = self._accepted().state
+        run = self._counterfactual_run()
+        transition = self.coordinator.accept_counterfactual(state, run, "receipt")
+        self.assertIs(transition.state.counterfactual_run, run)
+        self.assertEqual(transition.state.counterfactual_record, "receipt")
+        self.assertIsInstance(
+            transition.atlas_intents[0], AtlasCounterfactualIntent
+        )
+        with self.assertRaisesRegex(InvestigationStateError, "状态已经恢复"):
+            self.coordinator.accept_counterfactual(
+                state,
+                self._counterfactual_run(state_restored=False),
+            )
+        with self.assertRaisesRegex(InvestigationStateError, "不属于当前快照"):
+            self.coordinator.accept_counterfactual(
+                state,
+                self._counterfactual_run(source_snapshot_id="scene-old"),
+            )
+
+    def test_dismissing_counterfactual_restores_profiler_overlay(self):
+        state = self.coordinator.accept_profiler(
+            self._accepted().state,
+            self._capture(),
+        ).state
+        counterfactual = self.coordinator.accept_counterfactual(
+            state,
+            self._counterfactual_run(),
+        ).state
+        transition = self.coordinator.dismiss_counterfactual(counterfactual)
+        self.assertIsNone(transition.state.counterfactual_run)
+        self.assertIsInstance(transition.atlas_intents[0], AtlasPulseIntent)
+
     def test_exact_identity_mapping_refuses_ambiguous_short_names(self):
         ambiguous = SceneSnapshot.build(
             (
@@ -263,7 +427,14 @@ class InvestigationCoordinatorTests(unittest.TestCase):
             / "application"
             / "investigation.py"
         ).read_text(encoding="utf-8")
-        for forbidden in ("maya.cmds", "maya.api", "qt_compat", "..ui", "QWidget"):
+        for forbidden in (
+            "maya.cmds",
+            "maya.api",
+            "qt_compat",
+            "..ui",
+            "QWidget",
+            "collectors",
+        ):
             self.assertNotIn(forbidden, source)
 
     def test_qt_adapter_dispatches_typed_intents_without_business_decisions(self):

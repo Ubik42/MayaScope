@@ -507,3 +507,20 @@ Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordin
 
 整个 `/goal` 继续保持 active；下一阶段把已作为 Scene Clinic Rail 子控件运行的 Rule Array / Spectrum
 定义迁入 `ui/clinic.py`，再扩展 Coordinator 的 Profiler、Runtime 与 Counterfactual 代次边界。
+
+## 第三十六里程碑进度（完成：完整 Scene Clinic 与调查证据边界）
+
+1. `ClinicRuleArray` 与 `ClinicSpectrum` 从主窗口机械迁入 `ui/clinic.py`，原有中文层级、四通道光谱、配置指纹、制片信号和动态绘制保持不变。
+2. `SceneClinicView` 现在自行构造并持有规则阵列，Workspace 只装配完整诊所视图；测试仍可通过显式注入替身隔离业务。
+3. 规则阵列和光谱新增中文可访问名称；真实 Maya 截图确认迁移未造成布局、色彩和动态层级回归。
+4. `InvestigationCoordinator.accept_profiler` 核对快照代次与事件节点身份，并原子生成完整时间窗和 Atlas Pulse 意图。
+5. 时间窗选择统一验证、排序和越界拒绝；QWidget 不再直接决定 Pulse 覆盖层状态。
+6. Runtime 清单与报告必须共享精确身份，诊断身份不可重复、受影响节点必须属于当前快照，才允许驱动 Atlas 高亮。
+7. Counterfactual 只接收真实版本化报告、完整成对采样和同代 Profiler Capture，并强制验证 `state_restored` 与 `undo_head_preserved` 回执。
+8. 关闭反事实结果按当前调查状态恢复 Lens、Profiler 或普通 Atlas，不由按钮槽函数重复猜测覆盖优先级。
+9. 普通 Python 221 项通过（19 项宿主限定跳过）；真实 Maya 2025 PID 56008 在 18.713 秒内完成首次启动、重复启动、热重载、中文绘制和关闭，9 个活动计时器归零。
+10. 最终 Release ZIP 共 106 个清单成员，SHA-256 为 `12dc6817eb9d1f84a29f1583b6eecb4f9d3246f60dab2ba5110e8f78c2e3dfa4`；干净安装 PID 25748 只从临时 Module 导入，18.623 秒后自行退出并完成恢复/最终卸载。
+11. `ui/workspace.py` 从 4679 行降至 4269 行；`ui/clinic.py` 为 715 行。这里完成的是 Clinic View 和三类证据接收边界，采集会话与其他业务工作区仍在主窗口。
+
+整个 `/goal` 继续保持 active；下一阶段优先把 Profiler 与 Runtime 的采集/关闭用例从 QWidget 移入应用层，
+再拆出相应生产视图，持续使用真实 Maya 截图做视觉回归，不扩大展示版功能面。

@@ -67,8 +67,10 @@ Manager 已隔离在兼容入口和 `legacy/`，不再主导产品结构。v1 �
 没有为了“重构”另画一套截图专用前端。
 核心调查控制流由宿主无关 `application.InvestigationCoordinator` 校验快照代次、Scene Clinic 结果、
 Maya 选择和 Root Cause Lens，再以类型化意图驱动同一个生产 Atlas；旧异步结果不会静默覆盖新场景。
-右侧 Scene Clinic Rail 也已独立管理 Issue/Incident 卡片、因果证据和操作状态；中文证据由不依赖
-Maya/Qt 的 Presenter 生成，主窗口不再直接拼接 Clinic 文案或销毁诊断卡片。
+右侧 Scene Clinic 已成为完整、自持有的生产视图：规则阵列、四通道动态光谱、制片信号、
+Issue/Incident 卡片、因果证据和操作状态全部封装在 `ui/clinic.py`，主窗口只负责装配和连接用例。
+中文证据由不依赖 Maya/Qt 的 Presenter 生成；Profiler 时间窗、Runtime 清单与反事实实验也必须先经
+宿主无关 Coordinator 核对场景代次、节点身份、报告身份和恢复回执，才能驱动同一个 Atlas 覆盖层。
 
 ## 启动新版调查工作区
 

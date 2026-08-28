@@ -13,7 +13,7 @@ from MayaScope.analysis.delta import compare_snapshots
 from MayaScope.collectors.dependency_sequences import inspect_local_sequence
 from MayaScope.model import ExternalDependency, SceneNode, SceneSnapshot
 from MayaScope.qt_compat import QtWidgets
-from MayaScope.ui.workspace import ClinicRuleArray
+from MayaScope.ui.clinic import ClinicRuleArray
 
 
 def sequence_dependency(**changes):

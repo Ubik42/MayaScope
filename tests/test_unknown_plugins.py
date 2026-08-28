@@ -9,7 +9,7 @@ from MayaScope.analysis.clinic import DEFAULT_REGISTRY
 from MayaScope.analysis.delta import compare_snapshots
 from MayaScope.model import SceneNode, SceneSnapshot, SnapshotValidationError, UnknownPlugin
 from MayaScope.qt_compat import QtWidgets
-from MayaScope.ui.workspace import ClinicRuleArray
+from MayaScope.ui.clinic import ClinicRuleArray
 
 
 class UnknownPluginTests(unittest.TestCase):

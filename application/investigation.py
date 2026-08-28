@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Mapping, Optional, Sequence, Tuple, Union
 
 from ..analysis.clinic import ClinicReport
 from ..analysis.counterfactual import CounterfactualReport
@@ -23,8 +23,9 @@ from ..analysis.measured_lens import (
     build_measured_root_cause_report,
 )
 from ..analysis.pulse import PulseNodeStat, node_stats
+from ..analysis.runtime import RuntimeReport
 from ..analysis.rules import Issue
-from ..model import ProfilerCapture, SceneSnapshot
+from ..model import ProfilerCapture, RuntimeSnapshot, SceneSnapshot
 from ..presentation import WorkspacePresentationState
 
 
@@ -322,6 +323,150 @@ class InvestigationCoordinator:
             next_state,
             (AtlasLensIntent(report, current),),
         )
+
+    def accept_profiler(
+        self,
+        state: WorkspacePresentationState,
+        capture: ProfilerCapture,
+    ) -> InvestigationTransition:
+        snapshot = state.snapshot
+        if snapshot is None:
+            raise InvestigationStateError("没有当前场景，不能接收性能采样")
+        if capture.source_snapshot_id != snapshot.snapshot_id:
+            raise InvestigationStateError(
+                "性能采样不属于当前快照：%s" % (capture.source_snapshot_id or "未标记")
+            )
+        unknown = {
+            event.node_id
+            for event in capture.events
+            if event.node_id and event.node_id not in snapshot.node_map
+        }
+        if unknown:
+            raise InvestigationStateError(
+                "性能采样包含当前快照之外的节点：%s" % sorted(unknown)[0]
+            )
+        next_state = state.present_profiler(capture).update(
+            counterfactual_run=None,
+            counterfactual_record=None,
+        )
+        return InvestigationTransition(
+            next_state,
+            (AtlasPulseIntent(tuple(node_stats(capture, 0, capture.duration_us))),),
+        )
+
+    def set_pulse_range(
+        self,
+        state: WorkspacePresentationState,
+        start_us: int,
+        end_us: int,
+    ) -> InvestigationTransition:
+        capture = state.profiler_capture
+        if capture is None:
+            raise InvestigationStateError("当前没有性能采样，不能选择时间范围")
+        start, end = sorted((int(start_us), int(end_us)))
+        if start < 0 or end > capture.duration_us:
+            raise InvestigationStateError(
+                "性能时间范围越界：%s–%s / %s 微秒"
+                % (start, end, capture.duration_us)
+            )
+        next_state = state.update(pulse_range=(start, end))
+        return InvestigationTransition(
+            next_state,
+            (AtlasPulseIntent(tuple(node_stats(capture, start, end))),),
+        )
+
+    def accept_runtime(
+        self,
+        state: WorkspacePresentationState,
+        runtime: RuntimeSnapshot,
+        report: RuntimeReport,
+    ) -> InvestigationTransition:
+        snapshot = state.snapshot
+        if snapshot is None:
+            raise InvestigationStateError("没有当前场景，不能接收运行时证据")
+        if runtime.source_snapshot_id != snapshot.snapshot_id:
+            raise InvestigationStateError(
+                "运行时证据不属于当前快照：%s" % runtime.source_snapshot_id
+            )
+        if report.runtime_id != runtime.runtime_id:
+            raise InvestigationStateError("运行时报告与采集清单身份不一致")
+        issue_ids = [issue.id for issue in report.issues]
+        if len(issue_ids) != len(set(issue_ids)):
+            raise InvestigationStateError("运行时报告包含重复诊断身份")
+        unknown = {
+            node_id
+            for issue in report.issues
+            for node_id in issue.affected_node_ids
+            if node_id not in snapshot.node_map
+        }
+        if unknown:
+            raise InvestigationStateError(
+                "运行时报告包含当前快照之外的节点：%s" % sorted(unknown)[0]
+            )
+        next_state = state.present_runtime(runtime, report)
+        intent: AtlasIntent = (
+            AtlasHighlightIntent(tuple(report.affected_node_ids))
+            if report.affected_node_ids
+            else AtlasClearIntent()
+        )
+        return InvestigationTransition(next_state, (intent,))
+
+    def accept_counterfactual(
+        self,
+        state: WorkspacePresentationState,
+        run: Any,
+        record: Any = None,
+    ) -> InvestigationTransition:
+        snapshot = state.snapshot
+        if snapshot is None:
+            raise InvestigationStateError("没有当前场景，不能接收反事实证据")
+        report = getattr(run, "report", None)
+        if not isinstance(report, CounterfactualReport):
+            raise InvestigationStateError("反事实运行缺少有效报告")
+        if report.source_snapshot_id != snapshot.snapshot_id:
+            raise InvestigationStateError(
+                "反事实证据不属于当前快照：%s"
+                % (report.source_snapshot_id or "未标记")
+            )
+        if report.target_node_id not in snapshot.node_map:
+            raise InvestigationStateError("反事实目标不属于当前快照")
+        if report.metadata.get("state_restored") is not True:
+            raise InvestigationStateError("反事实报告未证明原始节点状态已经恢复")
+        if report.metadata.get("undo_head_preserved") is not True:
+            raise InvestigationStateError("反事实报告未证明 Maya Undo 顶部保持不变")
+        captures = tuple(getattr(run, "baseline_captures", ())) + tuple(
+            getattr(run, "variant_captures", ())
+        )
+        if len(captures) != report.pair_count * 2:
+            raise InvestigationStateError("反事实采样数量与成对试验报告不一致")
+        if any(item.source_snapshot_id != snapshot.snapshot_id for item in captures):
+            raise InvestigationStateError("反事实采样混入了其他场景代次")
+        next_state = state.present_counterfactual(run, record)
+        return InvestigationTransition(
+            next_state,
+            (AtlasCounterfactualIntent(report),),
+        )
+
+    def dismiss_counterfactual(
+        self,
+        state: WorkspacePresentationState,
+    ) -> InvestigationTransition:
+        next_state = state.update(
+            counterfactual_run=None,
+            counterfactual_record=None,
+        )
+        if state.lens_report is not None:
+            intent: AtlasIntent = AtlasLensIntent(
+                state.lens_report,
+                state.selected_candidate,
+            )
+        elif state.profiler_capture is not None:
+            intent = AtlasPulseIntent(
+                tuple(node_stats(state.profiler_capture, *state.pulse_range))
+            )
+        else:
+            intent = AtlasClearIntent()
+        return InvestigationTransition(next_state, (intent,))
 
     def close_lens(
         self,

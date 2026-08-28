@@ -11,7 +11,7 @@ from MayaScope.analysis.incidents import Incident
 from MayaScope.analysis.rules import Evidence, Issue, Severity
 from MayaScope.presentation import ClinicEvidencePresenter, EvidencePanelState
 from MayaScope.qt_compat import QtWidgets
-from MayaScope.ui.clinic import SceneClinicView
+from MayaScope.ui.clinic import ClinicRuleArray, ClinicSpectrum, SceneClinicView
 
 
 class ClinicEvidencePresenterTests(unittest.TestCase):
@@ -113,7 +113,7 @@ class SceneClinicViewTests(unittest.TestCase):
 
     def setUp(self):
         self.rule_array = _RuleArrayStub()
-        self.view = SceneClinicView(self.rule_array)
+        self.view = SceneClinicView(rule_array=self.rule_array)
 
     def tearDown(self):
         self.view.close()
@@ -170,6 +170,25 @@ class SceneClinicViewTests(unittest.TestCase):
         self.assertNotIn("self.evidence", workspace)
         self.assertNotIn("self.plan_button", workspace)
         self.assertIn("from .clinic import SceneClinicView", workspace)
+        self.assertNotIn("from .clinic import ClinicRuleArray", workspace)
+        self.assertNotIn("class ClinicRuleArray", workspace)
+        self.assertNotIn("class ClinicSpectrum", workspace)
+        clinic = (ui_root / "clinic.py").read_text(encoding="utf-8")
+        self.assertIn("class ClinicRuleArray", clinic)
+        self.assertIn("class ClinicSpectrum", clinic)
+        self.assertNotIn("maya.cmds", clinic)
+        self.assertNotIn("maya.api", clinic)
+
+    def test_production_rule_array_and_spectrum_are_owned_by_clinic_module(self):
+        panel = ClinicRuleArray()
+        self.assertEqual(panel.accessibleName(), "场景诊所规则阵列")
+        self.assertEqual(panel.spectrum.accessibleName(), "场景诊所规则光谱")
+        panel.set_motion_enabled(False)
+        self.assertIsInstance(panel.spectrum, ClinicSpectrum)
+        self.assertFalse(panel.spectrum._timer.isActive())
+        self.assertIn("场景诊所", panel.findChild(QtWidgets.QLabel, "ClinicTitle").text())
+        panel.close()
+        panel.deleteLater()
 
 
 if __name__ == "__main__":
