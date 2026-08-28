@@ -78,6 +78,9 @@ def run_install_replay(
     *,
     timeout: float = 90.0,
     gui_runner: Callable = run_gui_lifecycle,
+    scenario: str = "default",
+    width: int = 1480,
+    height: int = 900,
 ) -> dict:
     archive = archive.expanduser().resolve()
     maya = maya_executable.expanduser().resolve()
@@ -123,6 +126,9 @@ def run_install_replay(
             inject_package_parent=False,
             expected_package_root=package_root,
             working_directory=sandbox,
+            scenario=scenario,
+            width=width,
+            height=height,
         )
 
         removed = _run_installer(extraction_root, module_dir, "uninstall", sandbox)
@@ -172,6 +178,8 @@ def run_install_replay(
             "gui_lifecycle": gui,
             "gui_receipt": str(gui_output),
             "screenshot": str(screenshot),
+            "scenario": scenario,
+            "window_size": [int(width), int(height)],
             "uninstall": removed,
             "recovered_status": recovered,
             "final_uninstall": removed_final,
@@ -196,6 +204,11 @@ def main(argv=None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--screenshot", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument(
+        "--scenario", choices=("default", "instruments"), default="default"
+    )
+    parser.add_argument("--width", type=int, default=1480)
+    parser.add_argument("--height", type=int, default=900)
     args = parser.parse_args(argv)
     try:
         payload = run_install_replay(
@@ -204,6 +217,9 @@ def main(argv=None) -> int:
             args.output,
             args.screenshot,
             timeout=args.timeout,
+            scenario=args.scenario,
+            width=args.width,
+            height=args.height,
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))

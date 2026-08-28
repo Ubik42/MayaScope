@@ -17,7 +17,7 @@ class ChineseInterfaceTests(unittest.TestCase):
         ui_root = Path(__file__).resolve().parents[1] / "ui"
         source = "\n".join(
             (ui_root / name).read_text(encoding="utf-8")
-            for name in ("workspace.py", "clinic.py")
+            for name in ("workspace.py", "clinic.py", "profiler.py", "runtime.py")
         )
         required = (
             "场景图谱  /  实时取证",

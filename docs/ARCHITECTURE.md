@@ -63,6 +63,8 @@ Presentation State 不要求视图逐字段猜测失效关系，而是提供语�
 | `focus` / `present_lens` / `clear_lens` | 节点焦点和根因证据形成明确生命周期 |
 | `present_profiler` | Profiler 与完整采样时间窗同时进入状态 |
 | `present_runtime` / `present_delta` | 运行时证据和版本差异显式归属当前调查代 |
+| `dismiss_profiler` | 清除采样、实测 Lens 与反事实派生结果，恢复仍有效的 Runtime 或 Delta 覆盖 |
+| `dismiss_runtime` | 关闭运行时清单并按 Lens、反事实、Profiler、Delta 优先级恢复 Atlas |
 
 `MayaScopeWorkspace` 暂时保留 `_snapshot`、`_issues` 等兼容属性，它们全部映射到唯一
 `_presentation`，保证可以小步迁移现有 5000 多行视图代码。新增代码应直接使用语义转换，不再添加
@@ -114,7 +116,9 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 - `ui/foundation.py` 统一提供光谱颜色、Qt5/6 枚举解析、中文确认框与离屏中文字体装载；
 - `ui/atlas.py` 使用 `QGraphicsView/QGraphicsScene` 管理可交互节点、连接、语义渲染窗口、
   Lens/Delta/Pulse/反事实覆盖和选择回声抑制；它不导入 Maya Collector 或主窗口；
-- 性能、Runtime、回归、项目门禁和 Failure Prism 使用 QWidget + QPainter；
+- `ui/profiler.py` 独立拥有真实事件地平线、时间窗拖选、采样/反事实/清除动作和自己的动效计时器；
+- `ui/runtime.py` 独立拥有表达式、scriptJob、插件与回调四轨动态星图；
+- 回归、项目门禁和 Failure Prism 仍在主窗口中使用 QWidget + QPainter；
 - QTimer 只驱动绘制 phase、去抖和分片捕获；
 - 耗时纯数据分析使用 QThread Worker；
 - Maya 场景 API 与 QWidget 更新留在对应的安全线程边界；
@@ -122,8 +126,8 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 后续拆分顺序
 
-1. 为 Profiler、Runtime 与 Counterfactual 增加取消/关闭的完整应用用例，继续减少 QWidget 直接改状态；
-2. 按 Lens、Profiler、Runtime、Project Gate、Regression、Bisect 拆分其余视图模块；
+1. 将 Runtime 分片采集会话与控件锁定/取消恢复迁入显式 Application 用例；
+2. 按 Lens、Project Gate、Regression、Bisect 拆分其余视图模块；
 3. 将当前主窗口内的完整 QSS 提取为可版本化主题表面，并保留真实截图差异验收；
 4. 逐步移除 `_presentation_field` 兼容属性，让视图通过显式 render/state transition 工作；
 5. 为每个工作区保留普通 Python 状态测试、离屏中文视觉测试与真实 Maya 生命周期测试。
@@ -133,20 +137,23 @@ MayaScope 使用原生 Maya 2025 + PySide6，不使用 WebView 或 Electron：
 
 ## 当前验证证据
 
-- 普通 Python：221 项通过，19 项仅宿主环境测试按预期跳过；
+- 普通 Python：229 项通过，19 项仅宿主环境测试按预期跳过；
 - Presentation State：新场景代际失效、选择互斥、Lens、Profiler、Runtime、Delta 与字段拼写保护；
 - UI Foundation：稳定命名色板、Qt6 分组枚举和拼写拒绝；
 - Scene Atlas：节点/边物化、240 节点预算、异常节点优先、选择不回声和动效定时器边界；
 - Investigation Coordinator：旧 Clinic/Issue/Incident/Candidate 拒绝、同代 Delta、单选/多选/清空、
-  歧义身份、Profiler 时间窗、Runtime 身份和反事实恢复回执；
+  歧义身份、Profiler 时间窗、Runtime 身份、反事实恢复回执和确定性的覆盖恢复优先级；
+- Profiler/Runtime View：中文清除动作、窄宽按钮几何、计时器归属、真实报告形状和源码依赖边界；
 - Clinic/Evidence：等待、空规则、故障隔离、Issue/Incident、ChangePlan 状态、卡片生命周期、紧凑宽度
   与中文源码扫描均有独立契约；
-- 真实 Maya 2025：PID 56008，18.713 秒自行退出；
+- 真实 Maya 2025 仪器宽屏：PID 44988，584 个 Profiler 事件，22.440 秒自行退出；
+- 真实 Maya 2025 仪器窄屏：800 × 900，PID 15124，865 个 Profiler 事件，22.984 秒自行退出；
 - 干净 Release 安装：PID 25748 只从临时 Module 导入，18.623 秒自行退出并完成最终卸载；
 - 生命周期：首次启动、重复启动、开发热重载、唯一可见工作区、选择回调和菜单卸载通过；
 - 清理：9 个活动计时器归零，残留可见工作区为 0。
 
-`ui/workspace.py` 当前 4269 行；独立 `ui/clinic.py` 为 715 行，宿主无关
+`ui/workspace.py` 当前 3937 行；独立 `ui/profiler.py` 为 254 行，`ui/runtime.py` 为 155 行，
+`ui/clinic.py` 为 715 行，宿主无关
 `presentation/evidence.py` 为 140 行。主窗口已不再直接拥有 `issue_heading`、`evidence`、
-`plan_button`、Issue 卡片列表或 Clinic Rule Array / Spectrum 定义；其他业务工作区仍待迁移。该证据
+`plan_button`、Issue 卡片列表、Clinic、Profiler 或 Runtime View 定义；其他业务工作区仍待迁移。该证据
 不能被解释成整个主窗口已经完成拆分。

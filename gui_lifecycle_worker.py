@@ -37,6 +37,13 @@ def schedule() -> None:
             self.output = Path(os.environ["MAYASCOPE_GUI_LIFECYCLE_WORKER"])
             self.screenshot = Path(os.environ["MAYASCOPE_GUI_LIFECYCLE_SCREENSHOT"])
             self.checks = {}
+            self.scenario = os.environ.get(
+                "MAYASCOPE_GUI_LIFECYCLE_SCENARIO", "default"
+            )
+            self.window_size = (
+                int(os.environ.get("MAYASCOPE_GUI_LIFECYCLE_WIDTH", "1480")),
+                int(os.environ.get("MAYASCOPE_GUI_LIFECYCLE_HEIGHT", "900")),
+            )
             self.first = None
             self.second = None
             self.third = None
@@ -91,10 +98,12 @@ def schedule() -> None:
                     "通过": os.path.normcase(self.package_root) == os.path.normcase(expected),
                 }
             self.first = launch.run("workspace")
-            self.first.resize(1480, 900)
+            self.first.resize(*self.window_size)
             self.wait_ready(self.first, self.after_first)
 
         def after_first(self):
+            if self.scenario == "instruments":
+                self.prepare_instrument_scenario()
             self.screenshot.parent.mkdir(parents=True, exist_ok=True)
             saved = bool(self.first.grab().save(str(self.screenshot)))
             parent = self.first.parentWidget()
@@ -118,14 +127,103 @@ def schedule() -> None:
                     self.first._selection_bridge and self.first._selection_bridge.active
                 ),
             }
+            if self.scenario == "instruments":
+                self.verify_instrument_clear()
             old = self.first
             self.second = self.launch.run("workspace")
-            self.second.resize(1480, 900)
+            self.second.resize(*self.window_size)
             self.checks["重复启动清理"] = {
                 "旧窗口已隐藏": not old.isVisible(),
                 "创建新实例": self.second is not old,
             }
             self.wait_ready(self.second, self.after_second)
+
+        def prepare_instrument_scenario(self):
+            from MayaScope.analysis.runtime import analyze_runtime
+            from MayaScope.collectors import (
+                MayaRuntimeCaptureSession,
+                profile_callable,
+            )
+
+            snapshot = self.first._snapshot
+
+            def operation():
+                cmds.dgdirty(allPlugs=True)
+                cmds.refresh(force=True)
+
+            profiler = profile_callable(operation, snapshot=snapshot).capture
+            transition = self.first._investigation.accept_profiler(
+                self.first._presentation,
+                profiler,
+            )
+            self.first._apply_investigation_transition(transition)
+            self.first.pulse.set_capture(profiler)
+
+            session = MayaRuntimeCaptureSession(snapshot)
+            while not session.done:
+                session.step(max_items=512, max_milliseconds=25.0)
+            runtime = session.result
+            report = analyze_runtime(runtime, snapshot)
+            transition = self.first._investigation.accept_runtime(
+                self.first._presentation,
+                runtime,
+                report,
+            )
+            self.first._apply_investigation_transition(transition)
+            self.first.runtime_constellation.set_report(runtime, report)
+            self.first.clinic_view.set_heading("性能与运行时证据")
+            self.first.clinic_view.set_body(
+                "真实 Maya Profiler\n"
+                "%s 个事件 · %s 个节点事件已映射 · %.2f ms\n\n"
+                "运行时执行表面\n"
+                "%s 个表达式 · %s 个 scriptJob · %s 个插件 · %s 个回调节点\n\n"
+                "可拖选时间窗；清除采样只会移除调查证据，不会修改 Maya 场景。"
+                % (
+                    len(profiler.events),
+                    profiler.mapped_event_count,
+                    profiler.duration_us / 1000.0,
+                    len(runtime.expressions),
+                    len(runtime.script_jobs),
+                    len(runtime.plugins),
+                    len(runtime.node_callbacks),
+                )
+            )
+            self.first.clinic_view.set_action("只读证据 · 场景未修改", enabled=False)
+            self.first.status.setText(
+                "  仪器验收  ·  真实 Profiler 与 Runtime 采集完成  ·  场景未修改"
+            )
+            QtWidgets.QApplication.processEvents()
+            self.checks["真实仪器场景"] = {
+                "通过": bool(profiler.events and runtime.source_snapshot_id == snapshot.snapshot_id),
+                "Profiler 事件": len(profiler.events),
+                "已映射节点事件": profiler.mapped_event_count,
+                "Runtime 信号": len(report.issues),
+                "清除采样可见": not self.first.pulse.clear_button.isHidden(),
+                "场景代次一致": runtime.source_snapshot_id == snapshot.snapshot_id,
+            }
+            self.instrument_modified_before_clear = bool(
+                cmds.file(query=True, modified=True)
+            )
+            self.instrument_runtime = runtime
+
+        def verify_instrument_clear(self):
+            self.first._dismiss_profiler()
+            QtWidgets.QApplication.processEvents()
+            modified_after = bool(cmds.file(query=True, modified=True))
+            self.checks["清除采样恢复"] = {
+                "通过": bool(
+                    self.first._profiler_capture is None
+                    and self.first._counterfactual_run is None
+                    and self.first._runtime_snapshot is self.instrument_runtime
+                    and self.first.pulse.clear_button.isHidden()
+                    and modified_after == self.instrument_modified_before_clear
+                ),
+                "Profiler 已清除": self.first._profiler_capture is None,
+                "派生反事实已失效": self.first._counterfactual_run is None,
+                "Runtime 证据仍保留": self.first._runtime_snapshot is self.instrument_runtime,
+                "清除按钮已归位": self.first.pulse.clear_button.isHidden(),
+                "Maya 修改状态未改变": modified_after == self.instrument_modified_before_clear,
+            }
 
         def after_second(self):
             self.checks["重复启动清理"].update(
@@ -136,7 +234,7 @@ def schedule() -> None:
             )
             old = self.second
             self.third = self.launch.run("workspace", development=True)
-            self.third.resize(1480, 900)
+            self.third.resize(*self.window_size)
             self.checks["开发热重载"] = {
                 "旧窗口已隐藏": not old.isVisible(),
                 "创建重载实例": self.third is not old,
@@ -193,6 +291,8 @@ def schedule() -> None:
                 "plugin_version": self.version,
                 "package_root": self.package_root,
                 "screenshot": str(self.screenshot),
+                "scenario": self.scenario,
+                "window_size": list(self.window_size),
                 "duration_seconds": round(time.perf_counter() - self.started, 3),
                 "checks": self.checks,
             }

@@ -524,3 +524,20 @@ Issue/Incident 卡和证据文案不再定义在主窗口，同时保持 Coordin
 
 整个 `/goal` 继续保持 active；下一阶段优先把 Profiler 与 Runtime 的采集/关闭用例从 QWidget 移入应用层，
 再拆出相应生产视图，持续使用真实 Maya 截图做视觉回归，不扩大展示版功能面。
+
+## 第三十七里程碑进度（完成：Profiler / Runtime 仪器视图与可恢复关闭）
+
+1. `PulseHorizon` 原样迁入 `ui/profiler.py`，真实事件轨道、2500 事件绘制预算、时间窗拖选和动态地平线不再定义在主窗口。
+2. `RuntimeConstellationCanvas/Strip` 迁入 `ui/runtime.py`，表达式、scriptJob、插件、回调四轨星图保持生产 QPainter 视觉和独立 QTimer 所有权。
+3. Profiler 新增中文“清除采样”动作与暖橙警示态；工具提示明确它只清理调查证据，不修改 Maya 场景。
+4. `InvestigationCoordinator.dismiss_profiler` 同步失效 Profiler、实测 Lens 与 Counterfactual；仍有效的 Runtime 或 Delta 自动恢复到 Atlas。
+5. `dismiss_runtime` 不再由 QWidget 直接清状态；关闭后按 Lens、Counterfactual、Profiler、Runtime、Delta 的有效证据优先级恢复覆盖，修复残留高亮或错误清空。
+6. 新增类型化 `AtlasDeltaIntent`，Qt renderer 只负责把确定的应用意图分派给生产 Atlas。
+7. 真实截图发现性能统计与时间窗在窄宽重叠；时间窗改为绘图区右上角半透明仪器徽标，并补 800px 按钮几何测试。
+8. GUI 生命周期探针新增可选 `instruments` 场景与宽高参数：在自己拥有的 Maya 中真实执行 DG/视口 Profiler、Runtime 清点、截图和清除采样恢复，不影响默认干净安装路径。
+9. 普通 Python 229 项通过（19 项宿主限定跳过）；Maya 2025 mayapy 的 Profiler/Runtime 5 项集成测试通过。
+10. 1480 × 900 真机 PID 44988 采集 584 个事件并在 22.440 秒内退出；800 × 900 真机 PID 15124 采集 865 个事件并在 22.984 秒内退出。两者均证明 Runtime 保留、派生证据失效、清除按钮复位、modified 状态不变和 9 个计时器归零。
+11. `ui/workspace.py` 从 4269 行降至 3937 行；`ui/profiler.py` 254 行，`ui/runtime.py` 155 行。采集会话仍在 Workspace，本阶段不把 View 拆分冒充完整控制器迁移。
+
+整个 `/goal` 继续保持 active；下一阶段优先把 Runtime 分片采集、取消、控件锁定与关闭等待组织成
+可测试的 Application 会话控制器，再评估 Lens Ribbon 或 Project Gate 的下一次低风险视图拆分。

@@ -68,6 +68,11 @@ class AtlasCounterfactualIntent:
 
 
 @dataclass(frozen=True)
+class AtlasDeltaIntent:
+    delta: SceneDelta
+
+
+@dataclass(frozen=True)
 class AtlasClearIntent:
     pass
 
@@ -79,8 +84,27 @@ AtlasIntent = Union[
     AtlasSelectionIntent,
     AtlasPulseIntent,
     AtlasCounterfactualIntent,
+    AtlasDeltaIntent,
     AtlasClearIntent,
 ]
+
+
+def _current_overlay_intent(state: WorkspacePresentationState) -> AtlasIntent:
+    """Restore the highest-priority valid Atlas overlay for one coherent state."""
+    if state.lens_report is not None:
+        return AtlasLensIntent(state.lens_report, state.selected_candidate)
+    if state.counterfactual_run is not None:
+        return AtlasCounterfactualIntent(state.counterfactual_run.report)
+    if state.profiler_capture is not None:
+        return AtlasPulseIntent(
+            tuple(node_stats(state.profiler_capture, *state.pulse_range))
+        )
+    if state.runtime_report is not None:
+        affected = tuple(state.runtime_report.affected_node_ids)
+        return AtlasHighlightIntent(affected) if affected else AtlasClearIntent()
+    if state.delta is not None:
+        return AtlasDeltaIntent(state.delta)
+    return AtlasClearIntent()
 
 
 @dataclass(frozen=True)
@@ -455,35 +479,46 @@ class InvestigationCoordinator:
             counterfactual_run=None,
             counterfactual_record=None,
         )
-        if state.lens_report is not None:
-            intent: AtlasIntent = AtlasLensIntent(
-                state.lens_report,
-                state.selected_candidate,
-            )
-        elif state.profiler_capture is not None:
-            intent = AtlasPulseIntent(
-                tuple(node_stats(state.profiler_capture, *state.pulse_range))
-            )
-        else:
-            intent = AtlasClearIntent()
-        return InvestigationTransition(next_state, (intent,))
+        return InvestigationTransition(
+            next_state,
+            (_current_overlay_intent(next_state),),
+        )
+
+    def dismiss_profiler(
+        self,
+        state: WorkspacePresentationState,
+    ) -> InvestigationTransition:
+        """Clear measured evidence and every result derived from that capture."""
+        next_state = state.clear_lens().update(
+            profiler_capture=None,
+            pulse_range=(0, 0),
+            counterfactual_run=None,
+            counterfactual_record=None,
+        )
+        return InvestigationTransition(
+            next_state,
+            (_current_overlay_intent(next_state),),
+        )
+
+    def dismiss_runtime(
+        self,
+        state: WorkspacePresentationState,
+    ) -> InvestigationTransition:
+        next_state = state.update(runtime_snapshot=None, runtime_report=None)
+        return InvestigationTransition(
+            next_state,
+            (_current_overlay_intent(next_state),),
+        )
 
     def close_lens(
         self,
         state: WorkspacePresentationState,
     ) -> InvestigationTransition:
         next_state = state.clear_lens()
-        if state.counterfactual_run is not None:
-            intent: AtlasIntent = AtlasCounterfactualIntent(
-                state.counterfactual_run.report
-            )
-        elif state.profiler_capture is not None:
-            intent = AtlasPulseIntent(
-                tuple(node_stats(state.profiler_capture, *state.pulse_range))
-            )
-        else:
-            intent = AtlasClearIntent()
-        return InvestigationTransition(next_state, (intent,))
+        return InvestigationTransition(
+            next_state,
+            (_current_overlay_intent(next_state),),
+        )
 
     def host_selection(
         self,
@@ -539,6 +574,7 @@ class InvestigationCoordinator:
 __all__ = [
     "AtlasClearIntent",
     "AtlasCounterfactualIntent",
+    "AtlasDeltaIntent",
     "AtlasHighlightIntent",
     "AtlasIntent",
     "AtlasLensIntent",

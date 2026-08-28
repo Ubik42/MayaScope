@@ -3,6 +3,7 @@
 from .investigation import (
     AtlasClearIntent,
     AtlasCounterfactualIntent,
+    AtlasDeltaIntent,
     AtlasHighlightIntent,
     AtlasLensIntent,
     AtlasPulseIntent,
@@ -18,6 +19,7 @@ from .investigation import (
 __all__ = [
     "AtlasClearIntent",
     "AtlasCounterfactualIntent",
+    "AtlasDeltaIntent",
     "AtlasHighlightIntent",
     "AtlasLensIntent",
     "AtlasPulseIntent",

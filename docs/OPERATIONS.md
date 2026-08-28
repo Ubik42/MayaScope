@@ -468,13 +468,19 @@ python -m MayaScope.gui_lifecycle `
   --timeout 90
 ```
 
+可选 `--scenario instruments` 会在同一受管 Maya 中真实执行一次 DG/视口 Profiler 采样与 Runtime
+清点，随后截图并实际清除采样；`--width` / `--height` 可验证 800 × 560 以上的停靠尺寸。仪器场景
+回执额外记录事件数、节点映射、Runtime 信号、清除按钮复位、派生证据失效、Runtime 保留以及 Maya
+modified 状态前后一致。默认场景不执行这些额外操作，干净安装回放继续使用默认生命周期。
+
 探针依次检查首次绘制与捕获、重复启动只保留一个可见工作区、开发热重载先关闭旧窗口、选择回调
 移除、全部动态计时器停止、菜单卸载和宿主退出。超时时只在 PID、启动 ticks 和可执行路径仍与本次
 创建身份完全一致时终止进程。最终回执同时证明测试进程已经结束、启动前 Maya 身份逐一保持不变。
 
-2026-08-25 的 Maya 2025.3.3 实证由 PID 34284 完成：13.092 秒自行退出，9 个活动计时器归零，
-残留可见工作区为 0；测试前已有 PID 32232 全程保持原身份。结构化回执和真实宿主截图分别为
-`mayascope-gui-lifecycle.json`、`mayascope-real-maya-gui.png`。
+2026-08-27 的仪器实证同时覆盖 1480 × 900 与 800 × 900：宽屏 PID 44988 采集 584 个事件，
+窄屏 PID 15124 采集 865 个事件；两者均完成 Runtime 清点、清除采样恢复、重复启动、热重载和关闭，
+9 个活动计时器归零且 Maya modified 状态不变。结构化回执与截图使用
+`mayascope-instruments[-narrow]-lifecycle.json` 和 `mayascope-instruments[-narrow].png`。
 
 ## 27. Release ZIP 干净安装回放
 
@@ -503,6 +509,10 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
   --screenshot mayascope-clean-install-first-launch.png `
   --timeout 100
 ```
+
+涉及 Profiler/Runtime 视图或状态恢复的候选包使用 `--scenario instruments`；该参数会原样传给从
+临时 Module 启动的真实 GUI 探针，因此能证明仪器闭环来自 ZIP 解压副本，而不是开发源码。可同时
+传入 `--width 800 --height 900` 验证窄停靠。
 
 它复用真实 GUI 生命周期探针：记录启动前已有 Maya PID，只操作自己创建的隐藏 GUI，超时仅在
 PID、启动 ticks 与 `maya.exe` 路径仍精确匹配时回收。开发目录不会加入子进程环境；Module 内容、

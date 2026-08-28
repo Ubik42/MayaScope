@@ -19,6 +19,33 @@ class HostIntegrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "maya.exe"):
                 run_gui_lifecycle(fake, root / "report.json", root / "screen.png")
 
+    def test_gui_lifecycle_rejects_unknown_visual_scenario_before_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            fake = root / "maya.exe"
+            fake.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "不支持的 Maya GUI 验收场景"):
+                run_gui_lifecycle(
+                    fake,
+                    root / "report.json",
+                    root / "screen.png",
+                    scenario="concept-mock",
+                )
+
+    def test_gui_lifecycle_rejects_unusable_workspace_size_before_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            fake = root / "maya.exe"
+            fake.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "不得小于 800 × 560"):
+                run_gui_lifecycle(
+                    fake,
+                    root / "report.json",
+                    root / "screen.png",
+                    width=799,
+                    height=900,
+                )
+
     def test_development_reload_closes_old_window_before_module_reset(self):
         events = []
 

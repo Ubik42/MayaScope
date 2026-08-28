@@ -26,6 +26,8 @@ class InstallReplayTests(unittest.TestCase):
                 **kwargs,
             ):
                 self.assertFalse(kwargs["inject_package_parent"])
+                self.assertEqual(kwargs["scenario"], "instruments")
+                self.assertEqual((kwargs["width"], kwargs["height"]), (800, 900))
                 expected = kwargs["expected_package_root"].resolve()
                 screenshot_path.write_bytes(b"png evidence")
                 payload = {
@@ -42,6 +44,9 @@ class InstallReplayTests(unittest.TestCase):
                 output,
                 screenshot,
                 gui_runner=fake_gui_runner,
+                scenario="instruments",
+                width=800,
+                height=900,
             )
 
             self.assertTrue(payload["ok"])
@@ -55,6 +60,8 @@ class InstallReplayTests(unittest.TestCase):
             self.assertEqual(payload["recovered_status"]["state"], "installed")
             self.assertEqual(payload["final_status"]["state"], "not-installed")
             self.assertTrue(output.is_file())
+            self.assertEqual(payload["scenario"], "instruments")
+            self.assertEqual(payload["window_size"], [800, 900])
 
 
 if __name__ == "__main__":

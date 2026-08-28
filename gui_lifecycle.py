@@ -56,12 +56,20 @@ def run_gui_lifecycle(
     inject_package_parent: bool = True,
     expected_package_root: Path | None = None,
     working_directory: Path | None = None,
+    scenario: str = "default",
+    width: int = 1480,
+    height: int = 900,
 ) -> dict:
     maya = maya_executable.expanduser().resolve()
     if not maya.is_file() or maya.name.casefold() != "maya.exe":
         raise ValueError("必须提供真实 Maya GUI 可执行文件 maya.exe")
     output = output.expanduser().resolve()
     screenshot = screenshot.expanduser().resolve()
+    if scenario not in {"default", "instruments"}:
+        raise ValueError("不支持的 Maya GUI 验收场景：%s" % scenario)
+    width, height = int(width), int(height)
+    if width < 800 or height < 560:
+        raise ValueError("MayaScope GUI 验收尺寸不得小于 800 × 560")
     preexisting_ids = maya_process_ids()
     preexisting = {
         pid: identity
@@ -99,6 +107,9 @@ def run_gui_lifecycle(
         environment["MAYA_DISABLE_CER"] = "1"
         environment["MAYASCOPE_GUI_LIFECYCLE_WORKER"] = str(worker_receipt)
         environment["MAYASCOPE_GUI_LIFECYCLE_SCREENSHOT"] = str(screenshot)
+        environment["MAYASCOPE_GUI_LIFECYCLE_SCENARIO"] = scenario
+        environment["MAYASCOPE_GUI_LIFECYCLE_WIDTH"] = str(width)
+        environment["MAYASCOPE_GUI_LIFECYCLE_HEIGHT"] = str(height)
         if expected_package_root is not None:
             environment["MAYASCOPE_EXPECTED_PACKAGE_ROOT"] = str(
                 expected_package_root.expanduser().resolve()
@@ -169,6 +180,8 @@ def run_gui_lifecycle(
         "duration_seconds": round(time.perf_counter() - started, 3),
         "maya_log": str(log_path),
         "screenshot": str(screenshot),
+        "scenario": scenario,
+        "window_size": [width, height],
         "worker": worker,
     }
     _atomic_json(output, payload)
@@ -181,10 +194,24 @@ def main(argv=None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--screenshot", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument(
+        "--scenario",
+        choices=("default", "instruments"),
+        default="default",
+        help="可选真实交互场景；instruments 会采集 Profiler 与 Runtime 证据",
+    )
+    parser.add_argument("--width", type=int, default=1480)
+    parser.add_argument("--height", type=int, default=900)
     args = parser.parse_args(argv)
     try:
         payload = run_gui_lifecycle(
-            args.maya, args.output, args.screenshot, timeout=args.timeout
+            args.maya,
+            args.output,
+            args.screenshot,
+            timeout=args.timeout,
+            scenario=args.scenario,
+            width=args.width,
+            height=args.height,
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))

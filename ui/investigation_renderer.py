@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..application import (
     AtlasClearIntent,
     AtlasCounterfactualIntent,
+    AtlasDeltaIntent,
     AtlasHighlightIntent,
     AtlasLensIntent,
     AtlasPulseIntent,
@@ -33,6 +34,8 @@ def render_atlas_transition(atlas, transition: InvestigationTransition) -> None:
             atlas.show_pulse(intent.stats)
         elif isinstance(intent, AtlasCounterfactualIntent):
             atlas.show_counterfactual(intent.report)
+        elif isinstance(intent, AtlasDeltaIntent):
+            atlas.show_delta(intent.delta)
         elif isinstance(intent, AtlasClearIntent):
             atlas.clear_lens()
         else:

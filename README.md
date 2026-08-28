@@ -71,6 +71,9 @@ Maya 选择和 Root Cause Lens，再以类型化意图驱动同一个生产 Atla
 Issue/Incident 卡片、因果证据和操作状态全部封装在 `ui/clinic.py`，主窗口只负责装配和连接用例。
 中文证据由不依赖 Maya/Qt 的 Presenter 生成；Profiler 时间窗、Runtime 清单与反事实实验也必须先经
 宿主无关 Coordinator 核对场景代次、节点身份、报告身份和恢复回执，才能驱动同一个 Atlas 覆盖层。
+Profiler 地平线与 Runtime 星图分别位于 `ui/profiler.py`、`ui/runtime.py`，继续复用生产 QPainter
+视觉；“清除采样”会同步失效实测 Lens 与反事实结果、保留仍有效的 Runtime/Delta 证据，并明确保证
+不修改 Maya 场景。Atlas 覆盖恢复顺序由 Coordinator 决定，不再由关闭按钮各自猜测。
 
 ## 启动新版调查工作区
 
@@ -105,6 +108,17 @@ python -m MayaScope.gui_lifecycle `
   --screenshot mayascope-real-maya-gui.png
 ```
 
+若要真实采集 Profiler 与 Runtime 并同时检查宽屏/窄停靠视觉，可使用受管仪器场景；截图完成后探针
+还会实际执行“清除采样”，验证派生证据失效、Runtime 保留和 Maya modified 状态不变：
+
+```powershell
+python -m MayaScope.gui_lifecycle `
+  --maya "C:\Program Files\Autodesk\Maya2025\bin\maya.exe" `
+  --output mayascope-instruments.json `
+  --screenshot mayascope-instruments.png `
+  --scenario instruments --width 800 --height 900
+```
+
 还可以从最终 Release ZIP 完整复演一次干净安装。该命令会验证清单、解压到临时目录、安装隔离
 Maya Module，并在清空开发 `PYTHONPATH` / `MAYA_MODULE_PATH` 后启动真实 Maya；回执会记录
 Maya 实际导入的包目录，再依次验证可恢复卸载、备份恢复、最终卸载和临时目录清理：
@@ -117,6 +131,8 @@ python -m MayaScope.install_replay MayaScope-3.0.0-dev-Maya2025.zip `
 ```
 
 这项验证专门防止“发布包看似安装成功，真实 Maya 实际仍从开发源码目录导入”的假通过。
+发布候选若修改了 Profiler/Runtime，可追加 `--scenario instruments`，让临时安装副本真实完成采集、
+仪器截图和清除恢复；`--width 800 --height 900` 可把同一闭环作为窄停靠验收。
 
 Scene Clinic 也可作为只读 CI / 发布门禁运行。它只启动一个隐藏 Maya 2025 进程，打开场景时
 禁用 script node 执行，并在前后校验源文件 SHA-256：

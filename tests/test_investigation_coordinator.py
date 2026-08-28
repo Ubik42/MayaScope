@@ -15,6 +15,7 @@ from MayaScope.analysis.runtime import RuntimeReport
 from MayaScope.application import (
     AtlasClearIntent,
     AtlasCounterfactualIntent,
+    AtlasDeltaIntent,
     AtlasHighlightIntent,
     AtlasLensIntent,
     AtlasPulseIntent,
@@ -356,6 +357,83 @@ class InvestigationCoordinatorTests(unittest.TestCase):
         self.assertIsNone(transition.state.counterfactual_run)
         self.assertIsInstance(transition.atlas_intents[0], AtlasPulseIntent)
 
+    def test_dismissing_profiler_clears_derived_lens_and_restores_delta(self):
+        before = SceneSnapshot.build(
+            self.snapshot.nodes[:2],
+            (SceneEdge("a", "b"),),
+            snapshot_id="scene-before",
+        )
+        state = self.coordinator.accept_scene(
+            WorkspacePresentationState(snapshot=before),
+            self.snapshot,
+            self.report,
+            (self.incident,),
+            previous_snapshot=before,
+        ).state
+        state = self.coordinator.accept_profiler(state, self._capture()).state
+        state = self.coordinator.focus(
+            state,
+            "b",
+            direction="upstream",
+            max_depth=4,
+        ).state
+        transition = self.coordinator.dismiss_profiler(state)
+        self.assertIsNone(transition.state.profiler_capture)
+        self.assertEqual(transition.state.pulse_range, (0, 0))
+        self.assertIsNone(transition.state.lens_report)
+        self.assertIsInstance(transition.atlas_intents[0], AtlasDeltaIntent)
+        self.assertIs(transition.atlas_intents[0].delta, state.delta)
+
+    def test_dismissing_runtime_restores_profiler_instead_of_leaving_highlight(self):
+        state = self.coordinator.accept_profiler(
+            self._accepted().state,
+            self._capture(),
+        ).state
+        runtime = RuntimeSnapshot(
+            source_snapshot_id=self.snapshot.snapshot_id,
+            script_jobs=(),
+            expressions=(),
+            plugins=(),
+            node_callbacks=(),
+            script_jobs_available=True,
+            batch_mode=False,
+            maya_version="2025",
+        )
+        state = self.coordinator.accept_runtime(
+            state,
+            runtime,
+            RuntimeReport(runtime.runtime_id, (self.issue,), ()),
+        ).state
+        transition = self.coordinator.dismiss_runtime(state)
+        self.assertIsNone(transition.state.runtime_snapshot)
+        self.assertIsNone(transition.state.runtime_report)
+        self.assertIsInstance(transition.atlas_intents[0], AtlasPulseIntent)
+
+    def test_dismissing_profiler_keeps_valid_runtime_highlight(self):
+        state = self.coordinator.accept_profiler(
+            self._accepted().state,
+            self._capture(),
+        ).state
+        runtime = RuntimeSnapshot(
+            source_snapshot_id=self.snapshot.snapshot_id,
+            script_jobs=(),
+            expressions=(),
+            plugins=(),
+            node_callbacks=(),
+            script_jobs_available=True,
+            batch_mode=False,
+            maya_version="2025",
+        )
+        state = self.coordinator.accept_runtime(
+            state,
+            runtime,
+            RuntimeReport(runtime.runtime_id, (self.issue,), ()),
+        ).state
+        transition = self.coordinator.dismiss_profiler(state)
+        self.assertIs(transition.state.runtime_snapshot, runtime)
+        self.assertIsInstance(transition.atlas_intents[0], AtlasHighlightIntent)
+        self.assertEqual(transition.atlas_intents[0].node_ids, ("b",))
+
     def test_exact_identity_mapping_refuses_ambiguous_short_names(self):
         ambiguous = SceneSnapshot.build(
             (
@@ -460,12 +538,16 @@ class InvestigationCoordinatorTests(unittest.TestCase):
             def show_counterfactual(self, report):
                 self.calls.append(("counterfactual", report))
 
+            def show_delta(self, delta):
+                self.calls.append(("delta", delta))
+
             def clear_lens(self):
                 self.calls.append(("clear",))
 
         lens = SimpleNamespace(name="lens")
         candidate = SimpleNamespace(name="candidate")
         counterfactual = SimpleNamespace(name="counterfactual")
+        delta = SimpleNamespace(name="delta")
         intents = (
             AtlasSceneIntent(self.snapshot, (self.issue,), ("a",)),
             AtlasHighlightIntent(("b",)),
@@ -473,6 +555,7 @@ class InvestigationCoordinatorTests(unittest.TestCase):
             AtlasSelectionIntent(("c",), True),
             AtlasPulseIntent(()),
             AtlasCounterfactualIntent(counterfactual),
+            AtlasDeltaIntent(delta),
             AtlasClearIntent(),
         )
         probe = AtlasProbe()
@@ -482,7 +565,16 @@ class InvestigationCoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(
             [call[0] for call in probe.calls],
-            ["scene", "highlight", "lens", "selection", "pulse", "counterfactual", "clear"],
+            [
+                "scene",
+                "highlight",
+                "lens",
+                "selection",
+                "pulse",
+                "counterfactual",
+                "delta",
+                "clear",
+            ],
         )
 
 

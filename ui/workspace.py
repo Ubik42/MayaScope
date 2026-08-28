@@ -51,7 +51,7 @@ from ..collectors import (
     plan_node_state_experiment,
     profile_callable,
 )
-from ..model import ProfilerCapture, SceneNode, SceneSnapshot
+from ..model import SceneNode, SceneSnapshot
 from ..host_health import HostHealth, collect_host_health
 from ..presentation import WorkspacePresentationState
 from ..qt_compat import QtCore, QtGui, QtWidgets
@@ -71,6 +71,8 @@ from .foundation import (
     qt_enum as _qt_enum,
 )
 from .investigation_renderer import render_atlas_transition
+from .profiler import PulseHorizon
+from .runtime import RuntimeConstellationStrip
 from .workers import BisectWorker, ClinicWorker, ProjectQueueWorker
 
 
@@ -78,215 +80,6 @@ WINDOW_OBJECT_NAME = "MayaScopeSpectralWorkspace"
 _WINDOW = None
 
 
-class PulseHorizon(QtWidgets.QWidget):
-    rangeSelected = QtCore.Signal(object)
-    profileRequested = QtCore.Signal()
-    counterfactualRequested = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(142)
-        self.setMouseTracking(True)
-        self.setAccessibleName("性能采样事件地平线与可选时间范围")
-        self._phase = 0.0
-        self._summary = {"nodes": 0, "edges": 0}
-        self._capture: Optional[ProfilerCapture] = None
-        self._events = ()
-        self._lane_names = ()
-        self._selection = (0, 0)
-        self._drag_origin: Optional[int] = None
-        self.profile_button = QtWidgets.QPushButton("●  采样当前帧", self)
-        self.profile_button.setObjectName("ProfileButton")
-        self.profile_button.setToolTip("执行一次 Maya 强制求值与视口刷新，并记录真实耗时")
-        self.profile_button.clicked.connect(self.profileRequested)
-        self.counterfactual_button = QtWidgets.QPushButton("◇  测试焦点节点", self)
-        self.counterfactual_button.setObjectName("CounterfactualButton")
-        self.counterfactual_button.setToolTip(
-            "对焦点本地节点执行可撤销的成对 nodeState 实验"
-        )
-        self.counterfactual_button.setEnabled(False)
-        self.counterfactual_button.clicked.connect(self.counterfactualRequested)
-        timer = QtCore.QTimer(self)
-        timer.timeout.connect(self._tick)
-        timer.start(40)
-        self._timer = timer
-
-    def set_motion_enabled(self, enabled: bool):
-        if enabled:
-            self._timer.start(40)
-        else:
-            self._timer.stop()
-            self._phase = 0.0
-            self.update()
-
-    def set_summary(self, summary):
-        self._summary = summary
-        self.update()
-
-    def set_capture(self, capture: Optional[ProfilerCapture]):
-        self._capture = capture
-        if capture is None:
-            self._events = ()
-            self._lane_names = ()
-            self._selection = (0, 0)
-        else:
-            totals = {}
-            for event in capture.events:
-                totals[event.category_name] = totals.get(event.category_name, 0) + event.duration_us
-            self._lane_names = tuple(
-                name for name, _duration in sorted(totals.items(), key=lambda item: -item[1])[:5]
-            )
-            selected = [event for event in capture.events if event.category_name in self._lane_names]
-            if len(selected) > 2500:
-                selected = sorted(selected, key=lambda item: item.duration_us, reverse=True)[:2500]
-            self._events = tuple(sorted(selected, key=lambda item: (item.start_us, item.index)))
-            self._selection = (0, capture.duration_us)
-        self.update()
-
-    @property
-    def selected_range(self):
-        return self._selection
-
-    def resizeEvent(self, event):
-        hint = self.profile_button.sizeHint()
-        width = max(148, hint.width() + 14)
-        self.profile_button.setGeometry(self.width() - width - 18, 10, width, 30)
-        counter_width = max(136, self.counterfactual_button.sizeHint().width() + 12)
-        self.counterfactual_button.setGeometry(
-            self.width() - width - counter_width - 26, 10, counter_width, 30
-        )
-        super().resizeEvent(event)
-
-    def _plot_rect(self):
-        return QtCore.QRectF(128, 48, max(20, self.width() - 148), max(30, self.height() - 58))
-
-    def _x_for_time(self, time_us: int) -> float:
-        rect = self._plot_rect()
-        duration = max(1, self._capture.duration_us if self._capture else 1)
-        return rect.left() + rect.width() * max(0.0, min(1.0, time_us / float(duration)))
-
-    def _time_for_x(self, x: float) -> int:
-        if not self._capture:
-            return 0
-        rect = self._plot_rect()
-        ratio = max(0.0, min(1.0, (x - rect.left()) / max(1.0, rect.width())))
-        return int(round(ratio * self._capture.duration_us))
-
-    def _tick(self):
-        self._phase += 0.08
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QtGui.QColor("#0C0A13"))
-        if self._capture and self._capture.events:
-            self._paint_capture(painter)
-            return
-        path = QtGui.QPainterPath(QtCore.QPointF(0, self.height() * 0.63))
-        amplitude = min(19.0, 4.0 + self._summary.get("edges", 0) / 130.0)
-        for x in range(0, self.width() + 5, 5):
-            wave = math.sin(x * 0.038 + self._phase) + 0.35 * math.sin(x * 0.11 - self._phase * 1.7)
-            path.lineTo(x, self.height() * 0.63 + wave * amplitude)
-        glow = QtGui.QPen(QtGui.QColor(156, 92, 255, 45), 7)
-        painter.setPen(glow)
-        painter.drawPath(path)
-        painter.setPen(QtGui.QPen(COLORS["violet"], 1.4))
-        painter.drawPath(path)
-        painter.setPen(COLORS["muted"])
-        painter.drawText(18, 23, "追踪地平线  /  性能采样")
-        painter.setPen(QtGui.QColor("#5E586A"))
-        painter.drawText(18, 43, "采样当前帧，记录真实 Maya 求值事件")
-        painter.setPen(COLORS["acid"])
-        painter.drawText(
-            18,
-            self.height() - 10,
-            "%s 个节点   %s 条连接" % (self._summary.get("nodes", 0), self._summary.get("edges", 0)),
-        )
-
-    def _paint_capture(self, painter):
-        capture = self._capture
-        plot = self._plot_rect()
-        painter.setPen(COLORS["muted"])
-        painter.drawText(18, 23, "追踪地平线  /  性能采样")
-        painter.setPen(COLORS["acid"])
-        painter.drawText(
-            18,
-            42,
-            "%s 个事件  ·  %s 个已映射  ·  %.2f ms"
-            % (len(capture.events), capture.mapped_event_count, capture.duration_us / 1000.0),
-        )
-        if not self._lane_names:
-            return
-        lane_height = plot.height() / len(self._lane_names)
-        palette = (COLORS["violet"], COLORS["orange"], COLORS["acid"], COLORS["cyan"], QtGui.QColor("#FF4FCB"))
-        lane_index = {name: index for index, name in enumerate(self._lane_names)}
-        for index, name in enumerate(self._lane_names):
-            top = plot.top() + index * lane_height
-            painter.fillRect(QtCore.QRectF(plot.left(), top, plot.width(), lane_height - 1), QtGui.QColor(18, 14, 27, 180 if index % 2 else 130))
-            painter.setPen(QtGui.QColor("#777083"))
-            label = name if len(name) < 17 else name[:14] + "…"
-            painter.drawText(QtCore.QRectF(18, top, 102, lane_height), _qt_enum(QtCore.Qt, "AlignVCenter"), label.upper())
-        for event in self._events:
-            index = lane_index.get(event.category_name)
-            if index is None:
-                continue
-            left = self._x_for_time(event.start_us)
-            right = self._x_for_time(event.end_us)
-            top = plot.top() + index * lane_height + 3
-            color = QtGui.QColor(palette[index % len(palette)])
-            color.setAlpha(210 if event.node_id else 105)
-            painter.fillRect(QtCore.QRectF(left, top, max(1.2, right - left), max(2.0, lane_height - 7)), color)
-        start, end = self._selection
-        left, right = self._x_for_time(start), self._x_for_time(end)
-        painter.fillRect(QtCore.QRectF(plot.left(), plot.top(), max(0, left - plot.left()), plot.height()), QtGui.QColor(2, 2, 7, 155))
-        painter.fillRect(QtCore.QRectF(right, plot.top(), max(0, plot.right() - right), plot.height()), QtGui.QColor(2, 2, 7, 155))
-        painter.setPen(QtGui.QPen(COLORS["acid"], 1.4))
-        painter.drawLine(QtCore.QLineF(left, plot.top(), left, plot.bottom()))
-        painter.drawLine(QtCore.QLineF(right, plot.top(), right, plot.bottom()))
-        painter.setPen(QtGui.QColor("#B9B2C6"))
-        painter.drawText(int(plot.right() - 180), 42, "范围 %.2f–%.2f ms" % (start / 1000.0, end / 1000.0))
-
-    def mousePressEvent(self, event):
-        if self._capture and self._plot_rect().contains(event.position()):
-            self._drag_origin = self._time_for_x(event.position().x())
-            self._selection = (self._drag_origin, self._drag_origin)
-            self.update()
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self._capture and self._drag_origin is not None:
-            current = self._time_for_x(event.position().x())
-            self._selection = tuple(sorted((self._drag_origin, current)))
-            self.update()
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if self._capture and self._drag_origin is not None:
-            current = self._time_for_x(event.position().x())
-            start, end = sorted((self._drag_origin, current))
-            if start == end:
-                end = min(self._capture.duration_us, start + max(1, self._capture.duration_us // 100))
-            self._selection = (start, end)
-            self._drag_origin = None
-            self.rangeSelected.emit(self._selection)
-            self.update()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        if self._capture:
-            self._selection = (0, self._capture.duration_us)
-            self.rangeSelected.emit(self._selection)
-            self.update()
-            event.accept()
-            return
-        super().mouseDoubleClickEvent(event)
 
 
 
@@ -478,145 +271,6 @@ class DeltaStrip(QtWidgets.QFrame):
         self.setVisible(True)
 
 
-class RuntimeConstellationCanvas(QtWidgets.QWidget):
-    """Four orbital lanes for volatile execution surfaces."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumWidth(300)
-        self.setFixedHeight(64)
-        self._counts = (0, 0, 0, 0)
-        self._phase = 0.0
-        self._timer = QtCore.QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(42)
-
-    def set_runtime(self, runtime):
-        self._counts = (
-            len(runtime.expressions),
-            len(runtime.script_jobs),
-            len(runtime.plugins),
-            len(runtime.node_callbacks),
-        )
-        self.update()
-
-    def clear(self):
-        self._counts = (0, 0, 0, 0)
-        self.update()
-
-    def set_motion_enabled(self, enabled):
-        if enabled:
-            self._timer.start(42)
-        else:
-            self._timer.stop()
-            self._phase = 0.0
-            self.update()
-
-    def _tick(self):
-        self._phase = (self._phase + 0.016) % 1.0
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QtGui.QColor("#070A10"))
-        labels = ("表达式", "任务", "插件", "回调")
-        colors = (COLORS["orange"], COLORS["acid"], COLORS["violet"], COLORS["cyan"])
-        width = self.width() / 4.0
-        center_y = self.height() * 0.46
-        for lane, (label, color, count) in enumerate(zip(labels, colors, self._counts)):
-            center = QtCore.QPointF(width * (lane + 0.5), center_y)
-            radius = min(21.0, 9.0 + math.sqrt(count) * 2.8)
-            ring = QtGui.QColor(color)
-            ring.setAlpha(70 if count else 28)
-            painter.setBrush(_qt_enum(QtCore.Qt, "NoBrush"))
-            painter.setPen(QtGui.QPen(ring, 1.0))
-            painter.drawEllipse(center, radius, radius * 0.58)
-            satellites = min(10, count)
-            for index in range(satellites):
-                angle = math.tau * (index / float(max(1, satellites)) + self._phase * (1 if lane % 2 else -1))
-                point = QtCore.QPointF(
-                    center.x() + math.cos(angle) * radius,
-                    center.y() + math.sin(angle) * radius * 0.58,
-                )
-                glow = QtGui.QColor(color)
-                glow.setAlpha(52)
-                painter.setPen(_qt_enum(QtCore.Qt, "NoPen"))
-                painter.setBrush(glow)
-                painter.drawEllipse(point, 4.2, 4.2)
-                painter.setBrush(color)
-                painter.drawEllipse(point, 1.8, 1.8)
-            painter.setPen(COLORS["text"] if count else COLORS["muted"])
-            font = painter.font()
-            font.setBold(True)
-            font.setPointSize(7)
-            painter.setFont(font)
-            painter.drawText(
-                QtCore.QRectF(center.x() - 34, center.y() - 7, 68, 14),
-                _qt_enum(QtCore.Qt, "AlignCenter"),
-                "%s %s" % (label, count),
-            )
-
-
-class RuntimeConstellationStrip(QtWidgets.QFrame):
-    focusRequested = QtCore.Signal()
-    dismissRequested = QtCore.Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("RuntimeConstellation")
-        self.setFixedHeight(88)
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(18, 8, 12, 8)
-        layout.setSpacing(14)
-        mark_box = QtWidgets.QVBoxLayout()
-        mark = QtWidgets.QLabel("✦  运行时星图")
-        mark.setObjectName("RuntimeMark")
-        mark_box.addWidget(mark)
-        self.boundary = QtWidgets.QLabel("执行表面")
-        self.boundary.setObjectName("RuntimeMeta")
-        mark_box.addWidget(self.boundary)
-        layout.addLayout(mark_box)
-        self.canvas = RuntimeConstellationCanvas()
-        layout.addWidget(self.canvas, 1)
-        result = QtWidgets.QVBoxLayout()
-        self.signal = QtWidgets.QLabel("尚未采集")
-        self.signal.setObjectName("RuntimeSignal")
-        self.detail = QtWidgets.QLabel("")
-        self.detail.setObjectName("RuntimeMeta")
-        result.addWidget(self.signal)
-        result.addWidget(self.detail)
-        layout.addLayout(result)
-        focus = QtWidgets.QPushButton("追踪执行表面")
-        focus.setObjectName("RuntimeFocus")
-        focus.clicked.connect(self.focusRequested)
-        layout.addWidget(focus)
-        close = QtWidgets.QPushButton("×")
-        close.setObjectName("LensClose")
-        close.clicked.connect(self.dismissRequested)
-        layout.addWidget(close)
-
-    def set_report(self, runtime, report):
-        self.canvas.set_runtime(runtime)
-        self.signal.setText("%s 个运行时信号" % len(report.issues))
-        self.signal.setProperty("active", bool(report.issues))
-        self.signal.style().unpolish(self.signal)
-        self.signal.style().polish(self.signal)
-        self.detail.setText(
-            "%s 个表达式 · %s 个 scriptJob · %s 个插件 · %s 个回调节点"
-            % (len(runtime.expressions), len(runtime.script_jobs), len(runtime.plugins), len(runtime.node_callbacks))
-        )
-        self.boundary.setText("scriptJob %s · 回调内部不可观测" % ("可读取" if runtime.script_jobs_available else "不可用"))
-        self.setVisible(True)
-
-    def set_motion_enabled(self, enabled):
-        self.canvas.set_motion_enabled(enabled)
-
-    def clear(self):
-        self.canvas.clear()
-        self.signal.setText("尚未采集")
-        self.detail.clear()
-        self.boundary.setText("执行表面")
 
 
 class ProjectGateCanvas(QtWidgets.QWidget):
@@ -1858,6 +1512,7 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         self.pulse.profileRequested.connect(self._profile_frame)
         self.pulse.counterfactualRequested.connect(self._run_counterfactual)
         self.pulse.rangeSelected.connect(self._pulse_range_selected)
+        self.pulse.dismissRequested.connect(self._dismiss_profiler)
         outer.addWidget(self.pulse)
         self.status = QtWidgets.QLabel("  探针空闲")
         self.status.setObjectName("StatusLine")
@@ -2018,6 +1673,8 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
             #CounterfactualButton { color: #C8FF3D; background: #151021; border: 1px solid #75602A; font-weight: 900; letter-spacing: 1px; padding: 6px 12px; }
             #CounterfactualButton:hover { color: #08060D; background: #C8FF3D; border-color: #C8FF3D; }
             #CounterfactualButton:disabled { color: #514A5B; background: #100D16; border-color: #292332; }
+            #PulseClear { color: #FF9A6D; background: #170D0A; border: 1px solid #6E3426; padding: 6px 10px; }
+            #PulseClear:hover { color: #09060F; background: #FF9A6D; border-color: #FF9A6D; }
             #StatusLine { background: #09070D; color: #766F82; font-size: 9px; letter-spacing: 1px; border-top: 1px solid #1D1825; }
             QToolTip { background: #161020; color: white; border: 1px solid #9C5CFF; padding: 7px; }
         """)
@@ -2327,13 +1984,12 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         )
 
     def _dismiss_runtime(self):
+        transition = self._investigation.dismiss_runtime(self._presentation)
+        self._apply_investigation_transition(transition)
         self.runtime_constellation.setVisible(False)
         self.runtime_constellation.clear()
-        self._presentation = self._presentation.update(
-            runtime_snapshot=None, runtime_report=None
-        )
-        if not self._lens_report and not self._delta and not self._regression_payload:
-            self.atlas.clear_lens()
+        self._populate_issues()
+        self.status.setText("  运行时证据已关闭  ·  已恢复之前的图谱调查层")
 
     def _set_delta(self, delta: SceneDelta, before: SceneSnapshot):
         self._presentation = self._presentation.present_delta(delta, before)
@@ -3420,6 +3076,18 @@ class MayaScopeWorkspace(QtWidgets.QMainWindow):
         finally:
             self.pulse.profile_button.setEnabled(True)
             self.pulse.profile_button.setText("●  采样当前帧")
+
+    def _dismiss_profiler(self):
+        transition = self._investigation.dismiss_profiler(self._presentation)
+        self._apply_investigation_transition(transition)
+        self.pulse.set_capture(None)
+        self.counterfactual_strip.clear()
+        self.counterfactual_strip.setVisible(False)
+        self._hide_lens_chrome()
+        self._populate_issues()
+        self.status.setText(
+            "  性能采样已清除  ·  实测根因与反事实结果同步失效  ·  Maya 场景未修改"
+        )
 
     def _run_counterfactual(self):
         if not self._snapshot or not self._focus_node_id:
